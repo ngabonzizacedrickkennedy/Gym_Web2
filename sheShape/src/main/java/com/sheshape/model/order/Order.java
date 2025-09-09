@@ -67,61 +67,20 @@ public class Order {
     @Builder.Default
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
-    // Shipping Address
-    @Column(name = "shipping_address_line1")
-    private String shippingAddressLine1;
+    @Column(name = "shipping_address", columnDefinition = "TEXT")
+    private String shippingAddress;
 
-    @Column(name = "shipping_address_line2")
-    private String shippingAddressLine2;
+    @Column(name = "billing_address", columnDefinition = "TEXT")
+    private String billingAddress;
 
-    @Column(name = "shipping_city")
-    private String shippingCity;
-
-    @Column(name = "shipping_state")
-    private String shippingState;
-
-    @Column(name = "shipping_postal_code")
-    private String shippingPostalCode;
-
-    @Column(name = "shipping_country")
-    private String shippingCountry;
-
-    // Billing Address
-    @Column(name = "billing_address_line1")
-    private String billingAddressLine1;
-
-    @Column(name = "billing_address_line2")
-    private String billingAddressLine2;
-
-    @Column(name = "billing_city")
-    private String billingCity;
-
-    @Column(name = "billing_state")
-    private String billingState;
-
-    @Column(name = "billing_postal_code")
-    private String billingPostalCode;
-
-    @Column(name = "billing_country")
-    private String billingCountry;
-
-    @Column(name = "customer_email")
-    private String customerEmail;
-
-    @Column(name = "customer_phone")
-    private String customerPhone;
-
-    @Column(name = "notes", length = 1000)
-    private String notes;
+    @Column(name = "customer_notes", columnDefinition = "TEXT")
+    private String customerNotes;
 
     @Column(name = "tracking_number")
     private String trackingNumber;
 
-    @Column(name = "shipped_at")
-    private LocalDateTime shippedAt;
-
-    @Column(name = "delivered_at")
-    private LocalDateTime deliveredAt;
+    @Column(name = "estimated_delivery_date")
+    private LocalDateTime estimatedDeliveryDate;
 
     @CreatedDate
     @Column(name = "created_at", updatable = false)
@@ -191,7 +150,7 @@ public class Order {
 
     public void calculateTotals() {
         subtotal = items.stream()
-                .map(item -> item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+                .map(OrderItem::getTotalPrice)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         totalAmount = subtotal.add(taxAmount).add(shippingAmount).subtract(discountAmount);
