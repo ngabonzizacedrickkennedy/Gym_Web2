@@ -33,7 +33,7 @@ public class AuthCheckController {
                                 "id", currentUser.getId(),
                                 "email", currentUser.getEmail(),
                                 "username", currentUser.getUsername(),
-                                "role", currentUser.getRole()
+                                "role", currentUser.getRole().name() // Fixed: Added .name() to convert enum to string
                         )
                 ));
             } catch (Exception e) {
