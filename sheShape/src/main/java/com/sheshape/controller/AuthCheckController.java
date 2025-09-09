@@ -33,7 +33,7 @@ public class AuthCheckController {
                                 "id", currentUser.getId(),
                                 "email", currentUser.getEmail(),
                                 "username", currentUser.getUsername(),
-                                "role", currentUser.getRole().name()
+                                "role", currentUser.getRole()
                         )
                 ));
             } catch (Exception e) {
