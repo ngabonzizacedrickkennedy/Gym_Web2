@@ -66,6 +66,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/nutritionists").permitAll()
                         .requestMatchers("/api/nutritionists/{id}").permitAll()
                         .requestMatchers("/api/products/**").permitAll()
+                        
+                        .requestMatchers("/api/product-categories/**").permitAll()
                         .requestMatchers("/api/gym/programs").permitAll()
                         .requestMatchers("/api/gym/programs/{id}").permitAll()
 
