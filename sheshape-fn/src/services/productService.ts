@@ -174,7 +174,7 @@ export const productService = {
   // Get product categories
   async getProductCategories(): Promise<string[]> {
     try {
-      const response = await api.get('/api/products/categories');
+       const response = await api.get('/api/product-categories'); 
       return response.data;
     } catch (error) {
       console.error('Failed to fetch categories:', error);
