@@ -1,4 +1,4 @@
-package com.sheshape.security;
+package com.sheshape.model.order;
 
 import com.sheshape.model.order.Order;
 import com.sheshape.repository.UserRepository;

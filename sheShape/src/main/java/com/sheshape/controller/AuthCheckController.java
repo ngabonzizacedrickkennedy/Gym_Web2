@@ -33,7 +33,7 @@ public class AuthCheckController {
                                 "id", currentUser.getId(),
                                 "email", currentUser.getEmail(),
                                 "username", currentUser.getUsername(),
-                                "role", currentUser.getRole().name() // Fixed: Added .name() to convert enum to string
+                                "role", currentUser.getRole() // Role is already a String in UserDto
                         )
                 ));
             } catch (Exception e) {
