@@ -2,6 +2,8 @@
 import { api } from '@/lib/api';
 
 export interface CartItem {
+  id: number;
+  productId: number;
   product: {
     id: number;
     name: string;
@@ -16,14 +18,21 @@ export interface CartItem {
     active: boolean;
   };
   quantity: number;
+  unitPrice: number;
+  totalPrice: number; // ✅ Added this property to match backend DTO
+  available: boolean;
+  addedAt: string;
+  updatedAt: string;
 }
 
 export interface Cart {
   id: number;
   userId: number;
+  sessionId?: string;
   items: CartItem[];
   totalItems: number;
-  totalPrice: number;
+  totalPrice: number; // ✅ This should be totalAmount to match backend
+  totalAmount: number; // ✅ Added to match backend DTO
   subtotal: number;
   totalDiscount: number;
   createdAt: string;
