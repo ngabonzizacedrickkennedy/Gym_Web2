@@ -1,30 +1,36 @@
-'use client';
+"use client";
 
-import { useState, useEffect, use } from 'react';
-import Image from 'next/image';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { toast } from 'react-toastify';
-import { formatPrice } from '@/lib/utils';
+import { useState, useEffect, use } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "react-toastify";
+import { formatPrice } from "@/lib/utils";
+import { useAuth } from "@/context/AuthContext";
+import { useEnhancedCart } from "@/context/EnhancedCartContext";
+
+// Inside your component, add these hooks
+const { isAuthenticated } = useAuth();
+const { addItem, toggleCart } = useEnhancedCart();
 
 // Services
-import { productService } from '@/services/productService';
+import { productService } from "@/services/productService";
 
 // Types
-import { Product } from '@/types/models';
+import { Product } from "@/types/models";
 
 // UI Components
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Icons
-import { 
-  ArrowLeft, 
-  ShoppingCart, 
-  Heart, 
+import {
+  ArrowLeft,
+  ShoppingCart,
+  Heart,
   Share2,
   Star,
   Plus,
@@ -34,14 +40,17 @@ import {
   Shield,
   RotateCcw,
   CheckCircle,
-  AlertCircle
-} from 'lucide-react';
+  AlertCircle,
+} from "lucide-react";
 
-
-export default function ProductDetailPage({ params }: {params: Promise<{id: string}>}) {
+export default function ProductDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const router = useRouter();
   const productId = use(params);
-  
+
   // State
   const [product, setProduct] = useState<Product | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -51,28 +60,36 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
-  
+
   // Fetch product details
   useEffect(() => {
     const fetchProduct = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
-        const data = await productService.getProduct(Number.parseInt(productId.id));
+        const data = await productService.getProduct(
+          Number.parseInt(productId.id)
+        );
         setProduct(data);
-        
+
         // Fetch related products from the same category
         if (data.categories.length > 0) {
           const relatedData = await productService.getProducts({
             category: data.categories[0],
-            limit: 4
+            limit: 4,
           });
-          setRelatedProducts(relatedData.products.filter(p => p.id !== Number.parseInt(productId.id)));
+          setRelatedProducts(
+            relatedData.products.filter(
+              (p) => p.id !== Number.parseInt(productId.id)
+            )
+          );
         }
       } catch (error) {
-        console.error('Failed to fetch product:', error);
-        setError('Failed to load product data. The product may not exist or may have been removed.');
+        console.error("Failed to fetch product:", error);
+        setError(
+          "Failed to load product data. The product may not exist or may have been removed."
+        );
       } finally {
         setIsLoading(false);
       }
@@ -82,36 +99,47 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
       fetchProduct();
     }
   }, [productId]);
-  
+
   // Handlers
   const handleQuantityChange = (newQuantity: number) => {
     if (newQuantity >= 1 && newQuantity <= (product?.inventoryCount || 1)) {
       setQuantity(newQuantity);
     }
   };
-  
+
   const handleAddToCart = async () => {
     if (!product) return;
-    
+
+    if (!isAuthenticated) {
+      router.push(
+        `/login?returnTo=${encodeURIComponent(window.location.pathname)}`
+      );
+      return;
+    }
+
+    if (!product.isActive || product.inventoryCount === 0) {
+      toast.error("This product is currently unavailable");
+      return;
+    }
+
     setIsAddingToCart(true);
-    
+
     try {
-      // Add to cart logic here
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
-      toast.success(`Added ${quantity} ${product.name} to cart!`);
+      await addItem(product.id, quantity); // ✅ REAL cart functionality
+      setQuantity(1);
+      toggleCart(); // Opens cart to show added item
     } catch (error) {
-      toast.error('Failed to add item to cart. Please try again.');
-      console.log(error)
+      console.error("Failed to add to cart:", error);
     } finally {
       setIsAddingToCart(false);
     }
   };
-  
+
   const handleWishlistToggle = () => {
     setIsWishlisted(!isWishlisted);
-    toast.success(isWishlisted ? 'Removed from wishlist' : 'Added to wishlist');
+    toast.success(isWishlisted ? "Removed from wishlist" : "Added to wishlist");
   };
-  
+
   const handleShare = async () => {
     if (navigator.share) {
       try {
@@ -121,33 +149,45 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
           url: window.location.href,
         });
       } catch (error) {
-        console.log('Error sharing:', error);
+        console.log("Error sharing:", error);
       }
     } else {
       // Fallback: copy to clipboard
       navigator.clipboard.writeText(window.location.href);
-      toast.success('Link copied to clipboard!');
+      toast.success("Link copied to clipboard!");
     }
   };
-  
+
   const getMainImageUrl = (product: Product, index: number = 0) => {
     if (!product.images || product.images.length === 0) {
-      return '/images/product-placeholder.jpg';
+      return "/images/product-placeholder.jpg";
     }
-    
-    return product.images[index]?.imageUrl || '/images/product-placeholder.jpg';
+
+    return product.images[index]?.imageUrl || "/images/product-placeholder.jpg";
   };
-  
+
   const getStockStatus = (product: Product) => {
     if (product.inventoryCount === 0) {
-      return { status: 'Out of Stock', variant: 'destructive' as const, icon: AlertCircle };
+      return {
+        status: "Out of Stock",
+        variant: "destructive" as const,
+        icon: AlertCircle,
+      };
     } else if (product.inventoryCount <= 5) {
-      return { status: `Only ${product.inventoryCount} left`, variant: 'secondary' as const, icon: Package };
+      return {
+        status: `Only ${product.inventoryCount} left`,
+        variant: "secondary" as const,
+        icon: Package,
+      };
     } else {
-      return { status: 'In Stock', variant: 'default' as const, icon: CheckCircle };
+      return {
+        status: "In Stock",
+        variant: "default" as const,
+        icon: CheckCircle,
+      };
     }
   };
-  
+
   const renderRelatedProduct = (product: Product) => (
     <Card key={product.id} className="hover:shadow-md transition-shadow">
       <CardContent className="p-4">
@@ -160,7 +200,9 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
           />
         </div>
         <Link href={`/shop/${product.id}`} className="hover:underline">
-          <h4 className="font-semibold text-sm line-clamp-2 mb-2">{product.name}</h4>
+          <h4 className="font-semibold text-sm line-clamp-2 mb-2">
+            {product.name}
+          </h4>
         </Link>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
@@ -187,7 +229,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
       </CardContent>
     </Card>
   );
-  
+
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -197,14 +239,18 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
       </div>
     );
   }
-  
+
   if (error || !product) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center py-12">
           <Package className="h-16 w-16 mx-auto text-gray-400 mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Product Not Found</h3>
-          <p className="text-gray-500 mb-4">{error || 'The product you are looking for does not exist.'}</p>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            Product Not Found
+          </h3>
+          <p className="text-gray-500 mb-4">
+            {error || "The product you are looking for does not exist."}
+          </p>
           <Link href="/shop">
             <Button>
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -215,20 +261,25 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
       </div>
     );
   }
-  
+
   const stockStatus = getStockStatus(product);
   const StockIcon = stockStatus.icon;
-  
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Breadcrumb */}
       <div className="mb-6">
         <nav className="flex items-center space-x-2 text-sm text-gray-600">
-          <Link href="/shop" className="hover:text-gray-900">Shop</Link>
+          <Link href="/shop" className="hover:text-gray-900">
+            Shop
+          </Link>
           <span>/</span>
           {product.categories.length > 0 && (
             <>
-              <Link href={`/shop?category=${product.categories[0]}`} className="hover:text-gray-900">
+              <Link
+                href={`/shop?category=${product.categories[0]}`}
+                className="hover:text-gray-900"
+              >
                 {product.categories[0]}
               </Link>
               <span>/</span>
@@ -237,7 +288,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
           <span className="text-gray-900">{product.name}</span>
         </nav>
       </div>
-      
+
       {/* Back Button */}
       <div className="mb-6">
         <Button variant="ghost" onClick={() => router.back()}>
@@ -245,7 +296,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
           Back
         </Button>
       </div>
-      
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
         {/* Product Images */}
         <div className="space-y-4">
@@ -261,12 +312,16 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
             {product.discountPrice && (
               <div className="absolute top-4 left-4">
                 <Badge variant="destructive" className="text-sm">
-                  {Math.round(((product.price - product.discountPrice) / product.price) * 100)}% OFF
+                  {Math.round(
+                    ((product.price - product.discountPrice) / product.price) *
+                      100
+                  )}
+                  % OFF
                 </Badge>
               </div>
             )}
           </div>
-          
+
           {/* Image Thumbnails */}
           {product.images && product.images.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-2">
@@ -275,7 +330,9 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
                   key={index}
                   onClick={() => setSelectedImageIndex(index)}
                   className={`relative w-20 h-20 rounded-lg overflow-hidden border-2 flex-shrink-0 ${
-                    selectedImageIndex === index ? 'border-primary' : 'border-gray-200'
+                    selectedImageIndex === index
+                      ? "border-primary"
+                      : "border-gray-200"
                   }`}
                 >
                   <Image
@@ -289,56 +346,64 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
             </div>
           )}
         </div>
-        
+
         {/* Product Details */}
         <div className="space-y-6">
           {/* Product Header */}
           <div>
             <div className="flex items-start justify-between mb-2">
-              <h1 className="text-3xl font-bold text-gray-900">{product.name}</h1>
+              <h1 className="text-3xl font-bold text-gray-900">
+                {product.name}
+              </h1>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleWishlistToggle}
                 >
-                  <Heart className={`h-4 w-4 ${isWishlisted ? 'fill-red-500 text-red-500' : ''}`} />
+                  <Heart
+                    className={`h-4 w-4 ${
+                      isWishlisted ? "fill-red-500 text-red-500" : ""
+                    }`}
+                  />
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleShare}
-                >
+                <Button variant="outline" size="sm" onClick={handleShare}>
                   <Share2 className="h-4 w-4" />
                 </Button>
               </div>
             </div>
-            
+
             {/* Rating */}
             <div className="flex items-center gap-2 mb-4">
               <div className="flex items-center">
                 {[...Array(5)].map((_, i) => (
                   <Star
                     key={i}
-                    className={`h-4 w-4 ${i < 4 ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`}
+                    className={`h-4 w-4 ${
+                      i < 4
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "text-gray-300"
+                    }`}
                   />
                 ))}
               </div>
-              <span className="text-sm text-gray-600">(4.5 out of 5 stars)</span>
+              <span className="text-sm text-gray-600">
+                (4.5 out of 5 stars)
+              </span>
               <span className="text-sm text-gray-600">•</span>
               <span className="text-sm text-gray-600">124 reviews</span>
             </div>
-            
+
             {/* Categories */}
             <div className="flex items-center gap-2 mb-4">
-              {product.categories.map(category => (
+              {product.categories.map((category) => (
                 <Badge key={category} variant="outline">
                   {category}
                 </Badge>
               ))}
             </div>
           </div>
-          
+
           {/* Price */}
           <div className="space-y-2">
             <div className="flex items-center gap-3">
@@ -361,20 +426,20 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
               )}
             </div>
           </div>
-          
+
           {/* Stock Status */}
           <div className="flex items-center gap-2">
             <StockIcon className="h-5 w-5" />
-            <Badge variant={stockStatus.variant}>
-              {stockStatus.status}
-            </Badge>
+            <Badge variant={stockStatus.variant}>{stockStatus.status}</Badge>
           </div>
-          
+
           {/* Description */}
           <div>
-            <p className="text-gray-600 leading-relaxed">{product.description}</p>
+            <p className="text-gray-600 leading-relaxed">
+              {product.description}
+            </p>
           </div>
-          
+
           {/* Quantity and Add to Cart */}
           <div className="space-y-4">
             <div className="flex items-center gap-4">
@@ -388,7 +453,9 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
-                <span className="px-4 py-2 min-w-16 text-center">{quantity}</span>
+                <span className="px-4 py-2 min-w-16 text-center">
+                  {quantity}
+                </span>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -402,7 +469,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
                 {product.inventoryCount} available
               </span>
             </div>
-            
+
             <Button
               size="lg"
               className="w-full"
@@ -422,7 +489,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
               )}
             </Button>
           </div>
-          
+
           {/* Product Features */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 border-t">
             <div className="flex items-center gap-3">
@@ -456,7 +523,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
           </div>
         </div>
       </div>
-      
+
       {/* Product Details Tabs */}
       <div className="mb-12">
         <Tabs defaultValue="description" className="w-full">
@@ -465,7 +532,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
             <TabsTrigger value="specifications">Specifications</TabsTrigger>
             <TabsTrigger value="reviews">Reviews</TabsTrigger>
           </TabsList>
-          
+
           <TabsContent value="description" className="mt-6">
             <Card>
               <CardHeader>
@@ -477,9 +544,10 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
                     {product.description}
                   </p>
                   <p className="text-gray-600 leading-relaxed mt-4">
-                    This high-quality product is designed to meet the needs of fitness enthusiasts 
-                    and wellness seekers. Made with premium materials and attention to detail, 
-                    it offers excellent value for money.
+                    This high-quality product is designed to meet the needs of
+                    fitness enthusiasts and wellness seekers. Made with premium
+                    materials and attention to detail, it offers excellent value
+                    for money.
                   </p>
                   <ul className="mt-4 space-y-2">
                     <li>• Premium quality materials</li>
@@ -491,7 +559,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="specifications" className="mt-6">
             <Card>
               <CardHeader>
@@ -504,7 +572,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
                     <dl className="space-y-2">
                       <div className="flex justify-between">
                         <dt className="text-gray-600">SKU:</dt>
-                        <dd>SKU-{product.id.toString().padStart(6, '0')}</dd>
+                        <dd>SKU-{product.id.toString().padStart(6, "0")}</dd>
                       </div>
                       <div className="flex justify-between">
                         <dt className="text-gray-600">Weight:</dt>
@@ -545,7 +613,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
               </CardContent>
             </Card>
           </TabsContent>
-          
+
           <TabsContent value="reviews" className="mt-6">
             <Card>
               <CardHeader>
@@ -561,30 +629,52 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
                         {[...Array(5)].map((_, i) => (
                           <Star
                             key={i}
-                            className={`h-4 w-4 ${i < 4 ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`}
+                            className={`h-4 w-4 ${
+                              i < 4
+                                ? "fill-yellow-400 text-yellow-400"
+                                : "text-gray-300"
+                            }`}
                           />
                         ))}
                       </div>
                       <div className="text-sm text-gray-600">124 reviews</div>
                     </div>
                     <div className="flex-1 space-y-2">
-                      {[5, 4, 3, 2, 1].map(rating => (
+                      {[5, 4, 3, 2, 1].map((rating) => (
                         <div key={rating} className="flex items-center gap-2">
                           <span className="text-sm w-8">{rating}★</span>
                           <div className="flex-1 bg-gray-200 rounded-full h-2">
-                            <div 
+                            <div
                               className="bg-yellow-400 h-2 rounded-full"
-                              style={{ width: `${rating === 5 ? 60 : rating === 4 ? 25 : rating === 3 ? 10 : 3}%` }}
+                              style={{
+                                width: `${
+                                  rating === 5
+                                    ? 60
+                                    : rating === 4
+                                    ? 25
+                                    : rating === 3
+                                    ? 10
+                                    : 3
+                                }%`,
+                              }}
                             />
                           </div>
                           <span className="text-sm text-gray-600 w-8">
-                            {rating === 5 ? 74 : rating === 4 ? 31 : rating === 3 ? 12 : rating === 2 ? 4 : 3}
+                            {rating === 5
+                              ? 74
+                              : rating === 4
+                              ? 31
+                              : rating === 3
+                              ? 12
+                              : rating === 2
+                              ? 4
+                              : 3}
                           </span>
                         </div>
                       ))}
                     </div>
                   </div>
-                  
+
                   {/* Sample Reviews */}
                   <div className="space-y-4">
                     <div className="border-b pb-4">
@@ -598,14 +688,16 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
                           ))}
                         </div>
                         <span className="font-semibold">Sarah M.</span>
-                        <span className="text-sm text-gray-600">• 2 days ago</span>
+                        <span className="text-sm text-gray-600">
+                          • 2 days ago
+                        </span>
                       </div>
                       <p className="text-gray-600">
-                        Excellent quality product! Exactly what I was looking for. 
-                        Fast shipping and great customer service.
+                        Excellent quality product! Exactly what I was looking
+                        for. Fast shipping and great customer service.
                       </p>
                     </div>
-                    
+
                     <div className="border-b pb-4">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="flex items-center">
@@ -618,11 +710,13 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
                           <Star className="h-4 w-4 text-gray-300" />
                         </div>
                         <span className="font-semibold">Mike R.</span>
-                        <span className="text-sm text-gray-600">• 1 week ago</span>
+                        <span className="text-sm text-gray-600">
+                          • 1 week ago
+                        </span>
                       </div>
                       <p className="text-gray-600">
-                        Good product overall. The quality is solid and it works as expected. 
-                        Would recommend to others.
+                        Good product overall. The quality is solid and it works
+                        as expected. Would recommend to others.
                       </p>
                     </div>
                   </div>
@@ -632,7 +726,7 @@ export default function ProductDetailPage({ params }: {params: Promise<{id: stri
           </TabsContent>
         </Tabs>
       </div>
-      
+
       {/* Related Products */}
       {relatedProducts.length > 0 && (
         <div>

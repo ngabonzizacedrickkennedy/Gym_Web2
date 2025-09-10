@@ -7,7 +7,7 @@ import { EnhancedCartDrawer } from "@/components/cart/EnhancedCartDrawer";
 export default function CheckoutPage() {
   return (
     <>
-      <CheckoutSteps />
+      <CheckoutSteps currentStep={"shipping"} completedSteps={[]} />
       <EnhancedCartDrawer />
     </>
   );
