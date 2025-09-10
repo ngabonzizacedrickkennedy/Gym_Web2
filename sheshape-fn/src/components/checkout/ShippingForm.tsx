@@ -1,848 +1,582 @@
 // src/components/checkout/ShippingForm.tsx
 "use client";
 
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
+import { z } from "zod";
+import { useAuth } from "@/context/AuthContext";
 import { Address } from "@/services/orderService";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
+import {
+  Truck,
+  MapPin,
+  User,
+  Phone,
+  Mail,
+  AlertCircle,
+  Save,
+} from "lucide-react";
+import { toast } from "react-toastify";
 
+// Validation schema for shipping address
 const addressSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  phone: z.string().min(1, "Phone number is required"),
-  street: z.string().min(1, "Street address is required"),
-  city: z.string().min(1, "City is required"),
-  state: z.string().min(1, "State is required"),
-  zipCode: z.string().min(1, "ZIP code is required"),
-  country: z.string().min(1, "Country is required"),
+  firstName: z
+    .string()
+    .min(2, "First name must be at least 2 characters")
+    .max(50),
+  lastName: z
+    .string()
+    .min(2, "Last name must be at least 2 characters")
+    .max(50),
+  phone: z
+    .string()
+    .min(10, "Phone number must be at least 10 digits")
+    .regex(/^[+]?[(]?[\d\s\-\(\)]{10,}$/, "Please enter a valid phone number"),
+  street: z
+    .string()
+    .min(5, "Street address must be at least 5 characters")
+    .max(200),
+  city: z.string().min(2, "City must be at least 2 characters").max(100),
+  state: z
+    .string()
+    .min(2, "State/Province must be at least 2 characters")
+    .max(100),
+  zipCode: z
+    .string()
+    .min(3, "ZIP/Postal code must be at least 3 characters")
+    .max(20),
+  country: z.string().min(2, "Please select a country"),
+  notes: z.string().max(500, "Notes cannot exceed 500 characters").optional(),
+  useSameForBilling: z.boolean().default(true),
 });
+
+// Billing address schema (optional if using same as shipping)
+const billingAddressSchema = z
+  .object({
+    billingFirstName: z.string().optional(),
+    billingLastName: z.string().optional(),
+    billingPhone: z.string().optional(),
+    billingStreet: z.string().optional(),
+    billingCity: z.string().optional(),
+    billingState: z.string().optional(),
+    billingZipCode: z.string().optional(),
+    billingCountry: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Add validation when billing address is different
+    const fields = [
+      { field: "billingFirstName", name: "First name", min: 2 },
+      { field: "billingLastName", name: "Last name", min: 2 },
+      { field: "billingPhone", name: "Phone", min: 10 },
+      { field: "billingStreet", name: "Street", min: 5 },
+      { field: "billingCity", name: "City", min: 2 },
+      { field: "billingState", name: "State", min: 2 },
+      { field: "billingZipCode", name: "ZIP Code", min: 3 },
+      { field: "billingCountry", name: "Country", min: 2 },
+    ];
+
+    fields.forEach(({ field, name, min }) => {
+      const value = data[field as keyof typeof data];
+      if (!value || value.length < min) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${name} is required and must be at least ${min} characters`,
+        });
+      }
+    });
+  });
+
+const fullFormSchema = addressSchema.and(billingAddressSchema);
+
+type ShippingFormData = z.infer<typeof fullFormSchema>;
 
 interface ShippingFormProps {
-  shippingAddress: Address | null;
-  billingAddress: Address | null;
-  useSameAddress: boolean;
-  onUpdate: (updates: {
+  onSubmit: (
+    shippingAddress: Address,
+    billingAddress: Address | null,
+    notes: string,
+    useSameAddress: boolean
+  ) => void;
+  initialData?: {
     shippingAddress?: Address;
     billingAddress?: Address;
-    useSameAddress?: boolean;
     notes?: string;
-  }) => void;
+    useSameAddress?: boolean;
+  };
 }
 
-export function ShippingForm({
-  shippingAddress,
-  billingAddress,
-  useSameAddress,
-  onUpdate,
-}: ShippingFormProps) {
-  const {
-    register: registerShipping,
-    handleSubmit: handleSubmitShipping,
-    formState: { errors: shippingErrors },
-    watch: watchShipping,
-  } = useForm({
-    resolver: zodResolver(addressSchema),
-    defaultValues: shippingAddress || {
-      firstName: "",
-      lastName: "",
-      phone: "",
-      street: "",
-      city: "",
-      state: "",
-      zipCode: "",
-      country: "United States",
-    },
-  });
+// Country list - in a real app, this would come from an API
+const countries = [
+  { code: "US", name: "United States" },
+  { code: "CA", name: "Canada" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "AU", name: "Australia" },
+  { code: "DE", name: "Germany" },
+  { code: "FR", name: "France" },
+  { code: "IT", name: "Italy" },
+  { code: "ES", name: "Spain" },
+  { code: "RW", name: "Rwanda" },
+  // Add more countries as needed
+];
 
-  const {
-    register: registerBilling,
-    handleSubmit: handleSubmitBilling,
-    formState: { errors: billingErrors },
-  } = useForm({
-    resolver: zodResolver(addressSchema),
-    defaultValues: billingAddress || {
-      firstName: "",
-      lastName: "",
-      phone: "",
-      street: "",
-      city: "",
-      state: "",
-      zipCode: "",
-      country: "United States",
-    },
-  });
-
-  const handleShippingSubmit = (data: any) => {
-    onUpdate({ shippingAddress: data as Address });
-  };
-
-  const handleBillingSubmit = (data: any) => {
-    onUpdate({ billingAddress: data as Address });
-  };
-
-  const handleSameAddressChange = (checked: boolean) => {
-    onUpdate({ useSameAddress: checked });
-  };
-
-  return (
-    <div className="space-y-8">
-      {/* Shipping Address */}
-      <div>
-        <h3 className="text-lg font-medium mb-4">Shipping Address</h3>
-        <form
-          onSubmit={handleSubmitShipping(handleShippingSubmit)}
-          className="space-y-4"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="shipping-firstName">First Name</Label>
-              <Input
-                id="shipping-firstName"
-                {...registerShipping("firstName")}
-                onChange={(e) => {
-                  registerShipping("firstName").onChange(e);
-                  handleShippingSubmit(watchShipping());
-                }}
-              />
-              {shippingErrors.firstName && (
-                <p className="text-sm text-red-600">
-                  {shippingErrors.firstName.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="shipping-lastName">Last Name</Label>
-              <Input
-                id="shipping-lastName"
-                {...registerShipping("lastName")}
-                onChange={(e) => {
-                  registerShipping("lastName").onChange(e);
-                  handleShippingSubmit(watchShipping());
-                }}
-              />
-              {shippingErrors.lastName && (
-                <p className="text-sm text-red-600">
-                  {shippingErrors.lastName.message}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="shipping-phone">Phone Number</Label>
-            <Input
-              id="shipping-phone"
-              type="tel"
-              {...registerShipping("phone")}
-              onChange={(e) => {
-                registerShipping("phone").onChange(e);
-                handleShippingSubmit(watchShipping());
-              }}
-            />
-            {shippingErrors.phone && (
-              <p className="text-sm text-red-600">
-                {shippingErrors.phone.message}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <Label htmlFor="shipping-street">Street Address</Label>
-            <Input
-              id="shipping-street"
-              {...registerShipping("street")}
-              onChange={(e) => {
-                registerShipping("street").onChange(e);
-                handleShippingSubmit(watchShipping());
-              }}
-            />
-            {shippingErrors.street && (
-              <p className="text-sm text-red-600">
-                {shippingErrors.street.message}
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="shipping-city">City</Label>
-              <Input
-                id="shipping-city"
-                {...registerShipping("city")}
-                onChange={(e) => {
-                  registerShipping("city").onChange(e);
-                  handleShippingSubmit(watchShipping());
-                }}
-              />
-              {shippingErrors.city && (
-                <p className="text-sm text-red-600">
-                  {shippingErrors.city.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="shipping-state">State</Label>
-              <Input
-                id="shipping-state"
-                {...registerShipping("state")}
-                onChange={(e) => {
-                  registerShipping("state").onChange(e);
-                  handleShippingSubmit(watchShipping());
-                }}
-              />
-              {shippingErrors.state && (
-                <p className="text-sm text-red-600">
-                  {shippingErrors.state.message}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="shipping-zipCode">ZIP Code</Label>
-              <Input
-                id="shipping-zipCode"
-                {...registerShipping("zipCode")}
-                onChange={(e) => {
-                  registerShipping("zipCode").onChange(e);
-                  handleShippingSubmit(watchShipping());
-                }}
-              />
-              {shippingErrors.zipCode && (
-                <p className="text-sm text-red-600">
-                  {shippingErrors.zipCode.message}
-                </p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="shipping-country">Country</Label>
-              <Input
-                id="shipping-country"
-                {...registerShipping("country")}
-                onChange={(e) => {
-                  registerShipping("country").onChange(e);
-                  handleShippingSubmit(watchShipping());
-                }}
-              />
-              {shippingErrors.country && (
-                <p className="text-sm text-red-600">
-                  {shippingErrors.country.message}
-                </p>
-              )}
-            </div>
-          </div>
-        </form>
-      </div>
-
-      {/* Billing Address Toggle */}
-      <div className="flex items-center space-x-2">
-        <Checkbox
-          id="sameAddress"
-          checked={useSameAddress}
-          onCheckedChange={handleSameAddressChange}
-        />
-        <Label htmlFor="sameAddress">Use same address for billing</Label>
-      </div>
-
-      {/* Billing Address */}
-      {!useSameAddress && (
-        <div>
-          <h3 className="text-lg font-medium mb-4">Billing Address</h3>
-          <form
-            onSubmit={handleSubmitBilling(handleBillingSubmit)}
-            className="space-y-4"
-          >
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="billing-firstName">First Name</Label>
-                <Input
-                  id="billing-firstName"
-                  {...registerBilling("firstName")}
-                  onChange={(e) => {
-                    registerBilling("firstName").onChange(e);
-                    handleBillingSubmit(watchShipping());
-                  }}
-                />
-                {billingErrors.firstName && (
-                  <p className="text-sm text-red-600">
-                    {billingErrors.firstName.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="billing-lastName">Last Name</Label>
-                <Input
-                  id="billing-lastName"
-                  {...registerBilling("lastName")}
-                  onChange={(e) => {
-                    registerBilling("lastName").onChange(e);
-                    handleBillingSubmit(watchShipping());
-                  }}
-                />
-                {billingErrors.lastName && (
-                  <p className="text-sm text-red-600">
-                    {billingErrors.lastName.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Similar fields as shipping address */}
-            <div>
-              <Label htmlFor="billing-phone">Phone Number</Label>
-              <Input
-                id="billing-phone"
-                type="tel"
-                {...registerBilling("phone")}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="billing-street">Street Address</Label>
-              <Input id="billing-street" {...registerBilling("street")} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="billing-city">City</Label>
-                <Input id="billing-city" {...registerBilling("city")} />
-              </div>
-              <div>
-                <Label htmlFor="billing-state">State</Label>
-                <Input id="billing-state" {...registerBilling("state")} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="billing-zipCode">ZIP Code</Label>
-                <Input id="billing-zipCode" {...registerBilling("zipCode")} />
-              </div>
-              <div>
-                <Label htmlFor="billing-country">Country</Label>
-                <Input id="billing-country" {...registerBilling("country")} />
-              </div>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Order Notes */}
-      <div>
-        <Label htmlFor="notes">Order Notes (Optional)</Label>
-        <Textarea
-          id="notes"
-          placeholder="Any special instructions for your order..."
-          onChange={(e) => onUpdate({ notes: e.target.value })}
-        />
-      </div>
-    </div>
+export function ShippingForm({ onSubmit, initialData }: ShippingFormProps) {
+  const { user } = useAuth();
+  const [useSameForBilling, setUseSameForBilling] = useState(
+    initialData?.useSameAddress ?? true
   );
-}
-
-// src/components/checkout/PaymentForm.tsx
-("use client");
-
-import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { CheckoutRequest } from "@/services/orderService";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Card, CardContent } from "@/components/ui/card";
-import { CreditCard, Banknote, Smartphone, Truck } from "lucide-react";
-
-const paymentDetailsSchema = z.object({
-  cardNumber: z.string().optional(),
-  cardHolderName: z.string().optional(),
-  expiryMonth: z.number().min(1).max(12).optional(),
-  expiryYear: z.number().min(new Date().getFullYear()).optional(),
-  cvv: z.string().length(3).optional(),
-  paypalEmail: z.string().email().optional(),
-  walletType: z.string().optional(),
-});
-
-interface PaymentFormProps {
-  paymentMethod: CheckoutRequest["paymentMethod"] | null;
-  paymentDetails: CheckoutRequest["paymentDetails"] | null;
-  onUpdate: (updates: {
-    paymentMethod?: CheckoutRequest["paymentMethod"];
-    paymentDetails?: CheckoutRequest["paymentDetails"];
-  }) => void;
-}
-
-export function PaymentForm({
-  paymentMethod,
-  paymentDetails,
-  onUpdate,
-}: PaymentFormProps) {
-  const [selectedMethod, setSelectedMethod] = useState<
-    CheckoutRequest["paymentMethod"] | undefined
-  >(paymentMethod || undefined);
 
   const {
     register,
-    formState: { errors },
+    handleSubmit,
     watch,
-  } = useForm({
-    resolver: zodResolver(paymentDetailsSchema),
-    defaultValues: paymentDetails || {},
+    setValue,
+    formState: { errors, isValid },
+  } = useForm<ShippingFormData>({
+    resolver: zodResolver(fullFormSchema),
+    defaultValues: {
+      firstName:
+        initialData?.shippingAddress?.firstName ||
+        user?.profile?.firstName ||
+        "",
+      lastName:
+        initialData?.shippingAddress?.lastName || user?.profile?.lastName || "",
+      phone:
+        initialData?.shippingAddress?.phone || user?.profile?.phoneNumber || "",
+      street: initialData?.shippingAddress?.street || "",
+      city: initialData?.shippingAddress?.city || "",
+      state: initialData?.shippingAddress?.state || "",
+      zipCode: initialData?.shippingAddress?.zipCode || "",
+      country: initialData?.shippingAddress?.country || "RW",
+      notes: initialData?.notes || "",
+      useSameForBilling: useSameForBilling,
+      billingFirstName: initialData?.billingAddress?.firstName || "",
+      billingLastName: initialData?.billingAddress?.lastName || "",
+      billingPhone: initialData?.billingAddress?.phone || "",
+      billingStreet: initialData?.billingAddress?.street || "",
+      billingCity: initialData?.billingAddress?.city || "",
+      billingState: initialData?.billingAddress?.state || "",
+      billingZipCode: initialData?.billingAddress?.zipCode || "",
+      billingCountry: initialData?.billingAddress?.country || "RW",
+    },
+    mode: "onChange",
   });
 
-  const handleMethodChange = (method: CheckoutRequest["paymentMethod"]) => {
-    setSelectedMethod(method);
-    onUpdate({ paymentMethod: method });
+  const handleUseSameForBillingChange = (checked: boolean) => {
+    setUseSameForBilling(checked);
+    setValue("useSameForBilling", checked);
   };
 
-  const handleDetailsChange = () => {
-    const formData = watch();
-    onUpdate({ paymentDetails: formData });
-  };
+  const onFormSubmit = (data: ShippingFormData) => {
+    const shippingAddress: Address = {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: data.phone,
+      street: data.street,
+      city: data.city,
+      state: data.state,
+      zipCode: data.zipCode,
+      country: data.country,
+    };
 
-  const paymentMethods = [
-    {
-      id: "CREDIT_CARD" as const,
-      name: "Credit Card",
-      icon: CreditCard,
-      description: "Pay with Visa, Mastercard, or American Express",
-    },
-    {
-      id: "DEBIT_CARD" as const,
-      name: "Debit Card",
-      icon: CreditCard,
-      description: "Pay directly from your bank account",
-    },
-    {
-      id: "PAYPAL" as const,
-      name: "PayPal",
-      icon: Banknote,
-      description: "Pay with your PayPal account",
-    },
-    {
-      id: "DIGITAL_WALLET" as const,
-      name: "Digital Wallet",
-      icon: Smartphone,
-      description: "Pay with Apple Pay, Google Pay, etc.",
-    },
-    {
-      id: "CASH_ON_DELIVERY" as const,
-      name: "Cash on Delivery",
-      icon: Truck,
-      description: "Pay when your order is delivered",
-    },
-  ];
+    let billingAddress: Address | null = null;
+
+    if (!useSameForBilling) {
+      billingAddress = {
+        firstName: data.billingFirstName!,
+        lastName: data.billingLastName!,
+        phone: data.billingPhone!,
+        street: data.billingStreet!,
+        city: data.billingCity!,
+        state: data.billingState!,
+        zipCode: data.billingZipCode!,
+        country: data.billingCountry!,
+      };
+    }
+
+    onSubmit(
+      shippingAddress,
+      billingAddress,
+      data.notes || "",
+      useSameForBilling
+    );
+    toast.success("Shipping information saved!");
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Payment Method Selection */}
-      <div>
-        <h3 className="text-lg font-medium mb-4">Select Payment Method</h3>
-        <RadioGroup
-          value={selectedMethod}
-          onValueChange={handleMethodChange}
-          className="space-y-3"
-        >
-          {paymentMethods.map((method) => (
-            <div key={method.id}>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value={method.id} id={method.id} />
-                <Label htmlFor={method.id} className="flex-1">
-                  <Card className="cursor-pointer hover:bg-gray-50 transition-colors">
-                    <CardContent className="flex items-center p-4">
-                      <method.icon className="h-6 w-6 mr-3 text-gray-600" />
-                      <div>
-                        <div className="font-medium">{method.name}</div>
-                        <div className="text-sm text-gray-500">
-                          {method.description}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Label>
+    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6">
+      {/* Shipping Address */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Truck className="h-5 w-5" />
+            Shipping Address
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Name Fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="firstName">First Name</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                <Input
+                  {...register("firstName")}
+                  id="firstName"
+                  placeholder="John"
+                  className="pl-10"
+                />
               </div>
+              {errors.firstName && (
+                <p className="text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4" />
+                  {errors.firstName.message}
+                </p>
+              )}
             </div>
-          ))}
-        </RadioGroup>
-      </div>
 
-      {/* Payment Details Forms */}
-      {selectedMethod &&
-        (selectedMethod === "CREDIT_CARD" ||
-          selectedMethod === "DEBIT_CARD") && (
-          <div>
-            <h3 className="text-lg font-medium mb-4">Card Information</h3>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="cardHolderName">Cardholder Name</Label>
+            <div className="space-y-2">
+              <Label htmlFor="lastName">Last Name</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                 <Input
-                  id="cardHolderName"
-                  {...register("cardHolderName")}
-                  onChange={(e) => {
-                    register("cardHolderName").onChange(e);
-                    handleDetailsChange();
-                  }}
-                  placeholder="John Doe"
+                  {...register("lastName")}
+                  id="lastName"
+                  placeholder="Doe"
+                  className="pl-10"
                 />
-                {errors.cardHolderName && (
-                  <p className="text-sm text-red-600">
-                    {errors.cardHolderName.message}
-                  </p>
-                )}
               </div>
-
-              <div>
-                <Label htmlFor="cardNumber">Card Number</Label>
-                <Input
-                  id="cardNumber"
-                  {...register("cardNumber")}
-                  onChange={(e) => {
-                    register("cardNumber").onChange(e);
-                    handleDetailsChange();
-                  }}
-                  placeholder="1234 5678 9012 3456"
-                  maxLength={19}
-                />
-                {errors.cardNumber && (
-                  <p className="text-sm text-red-600">
-                    {errors.cardNumber.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="expiryMonth">Month</Label>
-                  <Input
-                    id="expiryMonth"
-                    type="number"
-                    min="1"
-                    max="12"
-                    {...register("expiryMonth", { valueAsNumber: true })}
-                    onChange={(e) => {
-                      register("expiryMonth").onChange(e);
-                      handleDetailsChange();
-                    }}
-                    placeholder="MM"
-                  />
-                  {errors.expiryMonth && (
-                    <p className="text-sm text-red-600">
-                      {errors.expiryMonth.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="expiryYear">Year</Label>
-                  <Input
-                    id="expiryYear"
-                    type="number"
-                    min={new Date().getFullYear()}
-                    max={new Date().getFullYear() + 20}
-                    {...register("expiryYear", { valueAsNumber: true })}
-                    onChange={(e) => {
-                      register("expiryYear").onChange(e);
-                      handleDetailsChange();
-                    }}
-                    placeholder="YYYY"
-                  />
-                  {errors.expiryYear && (
-                    <p className="text-sm text-red-600">
-                      {errors.expiryYear.message}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="cvv">CVV</Label>
-                  <Input
-                    id="cvv"
-                    {...register("cvv")}
-                    onChange={(e) => {
-                      register("cvv").onChange(e);
-                      handleDetailsChange();
-                    }}
-                    placeholder="123"
-                    maxLength={4}
-                  />
-                  {errors.cvv && (
-                    <p className="text-sm text-red-600">{errors.cvv.message}</p>
-                  )}
-                </div>
-              </div>
+              {errors.lastName && (
+                <p className="text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4" />
+                  {errors.lastName.message}
+                </p>
+              )}
             </div>
           </div>
-        )}
 
-      {selectedMethod === "PAYPAL" && (
-        <div>
-          <h3 className="text-lg font-medium mb-4">PayPal Information</h3>
-          <div>
-            <Label htmlFor="paypalEmail">PayPal Email</Label>
-            <Input
-              id="paypalEmail"
-              type="email"
-              {...register("paypalEmail")}
-              onChange={(e) => {
-                register("paypalEmail").onChange(e);
-                handleDetailsChange();
-              }}
-              placeholder="your-email@example.com"
-            />
-            {errors.paypalEmail && (
-              <p className="text-sm text-red-600">
-                {errors.paypalEmail.message}
+          {/* Phone */}
+          <div className="space-y-2">
+            <Label htmlFor="phone">Phone Number</Label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                {...register("phone")}
+                id="phone"
+                type="tel"
+                placeholder="+250 123 456 789"
+                className="pl-10"
+              />
+            </div>
+            {errors.phone && (
+              <p className="text-sm text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-4 w-4" />
+                {errors.phone.message}
               </p>
             )}
           </div>
-        </div>
-      )}
 
-      {selectedMethod === "DIGITAL_WALLET" && (
-        <div>
-          <h3 className="text-lg font-medium mb-4">Digital Wallet</h3>
-          <div>
-            <Label htmlFor="walletType">Wallet Type</Label>
-            <select
-              id="walletType"
-              {...register("walletType")}
-              onChange={(e) => {
-                register("walletType").onChange(e);
-                handleDetailsChange();
-              }}
-              className="w-full p-2 border border-gray-300 rounded-md"
-            >
-              <option value="">Select wallet type</option>
-              <option value="apple_pay">Apple Pay</option>
-              <option value="google_pay">Google Pay</option>
-              <option value="samsung_pay">Samsung Pay</option>
-            </select>
+          {/* Street Address */}
+          <div className="space-y-2">
+            <Label htmlFor="street">Street Address</Label>
+            <div className="relative">
+              <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                {...register("street")}
+                id="street"
+                placeholder="123 Main Street, Apartment 4B"
+                className="pl-10"
+              />
+            </div>
+            {errors.street && (
+              <p className="text-sm text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-4 w-4" />
+                {errors.street.message}
+              </p>
+            )}
           </div>
-        </div>
-      )}
 
-      {selectedMethod === "CASH_ON_DELIVERY" && (
-        <div className="bg-blue-50 p-4 rounded-lg">
-          <h3 className="text-lg font-medium mb-2">Cash on Delivery</h3>
-          <p className="text-sm text-gray-600">
-            You will pay for your order when it is delivered to your address.
-            Please have the exact amount ready for the delivery person.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// src/components/checkout/CheckoutSteps.tsx
-("use client");
-
-import { Check } from "lucide-react";
-import { cn } from "@/lib/utils";
-
-interface CheckoutStepsProps {
-  currentStep: "shipping" | "payment" | "review" | "success";
-}
-
-export function CheckoutSteps({ currentStep }: CheckoutStepsProps) {
-  const steps = [
-    { id: "shipping", name: "Shipping", description: "Enter your address" },
-    { id: "payment", name: "Payment", description: "Choose payment method" },
-    { id: "review", name: "Review", description: "Review your order" },
-  ];
-
-  const getStepStatus = (stepId: string) => {
-    const stepIndex = steps.findIndex((step) => step.id === stepId);
-    const currentIndex = steps.findIndex((step) => step.id === currentStep);
-
-    if (stepIndex < currentIndex) return "completed";
-    if (stepIndex === currentIndex) return "current";
-    return "upcoming";
-  };
-
-  return (
-    <nav aria-label="Progress">
-      <ol role="list" className="flex items-center">
-        {steps.map((step, stepIdx) => {
-          const status = getStepStatus(step.id);
-
-          return (
-            <li
-              key={step.id}
-              className={cn(
-                stepIdx !== steps.length - 1 ? "pr-8 sm:pr-20" : "",
-                "relative"
-              )}
-            >
-              {status === "completed" ? (
-                <div
-                  className="absolute inset-0 flex items-center"
-                  aria-hidden="true"
-                >
-                  <div className="h-0.5 w-full bg-primary" />
-                </div>
-              ) : status === "current" ? (
-                <div
-                  className="absolute inset-0 flex items-center"
-                  aria-hidden="true"
-                >
-                  <div className="h-0.5 w-full bg-gray-200" />
-                </div>
-              ) : (
-                <div
-                  className="absolute inset-0 flex items-center"
-                  aria-hidden="true"
-                >
-                  <div className="h-0.5 w-full bg-gray-200" />
-                </div>
-              )}
-
-              <a
-                href="#"
-                className={cn(
-                  "relative flex h-8 w-8 items-center justify-center rounded-full",
-                  status === "completed"
-                    ? "bg-primary hover:bg-primary/90"
-                    : status === "current"
-                    ? "border-2 border-primary bg-white"
-                    : "border-2 border-gray-300 bg-white hover:border-gray-400"
-                )}
-              >
-                {status === "completed" ? (
-                  <Check className="h-5 w-5 text-white" aria-hidden="true" />
-                ) : (
-                  <span
-                    className={cn(
-                      "h-2.5 w-2.5 rounded-full",
-                      status === "current" ? "bg-primary" : "bg-transparent"
-                    )}
-                  />
-                )}
-                <span className="sr-only">{step.name}</span>
-              </a>
-
-              <div className="mt-3">
-                <p
-                  className={cn(
-                    "text-sm font-medium",
-                    status === "current" ? "text-primary" : "text-gray-500"
-                  )}
-                >
-                  {step.name}
+          {/* City, State, ZIP */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="city">City</Label>
+              <Input {...register("city")} id="city" placeholder="Kigali" />
+              {errors.city && (
+                <p className="text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4" />
+                  {errors.city.message}
                 </p>
-                <p className="text-xs text-gray-500">{step.description}</p>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
-}
+              )}
+            </div>
 
-// src/components/checkout/OrderSummary.tsx
-("use client");
+            <div className="space-y-2">
+              <Label htmlFor="state">State/Province</Label>
+              <Input
+                {...register("state")}
+                id="state"
+                placeholder="Kigali City"
+              />
+              {errors.state && (
+                <p className="text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4" />
+                  {errors.state.message}
+                </p>
+              )}
+            </div>
 
-import Image from "next/image";
-import { Cart } from "@/services/cartService";
-import { formatPrice } from "@/lib/utils";
-import { Separator } from "@/components/ui/separator";
-import { ShoppingBag } from "lucide-react";
+            <div className="space-y-2">
+              <Label htmlFor="zipCode">ZIP/Postal Code</Label>
+              <Input
+                {...register("zipCode")}
+                id="zipCode"
+                placeholder="00100"
+              />
+              {errors.zipCode && (
+                <p className="text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4" />
+                  {errors.zipCode.message}
+                </p>
+              )}
+            </div>
+          </div>
 
-interface OrderSummaryProps {
-  cart: Cart;
-}
+          {/* Country */}
+          <div className="space-y-2">
+            <Label htmlFor="country">Country</Label>
+            <select
+              {...register("country")}
+              id="country"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            >
+              <option value="">Select a country</option>
+              {countries.map((country) => (
+                <option key={country.code} value={country.code}>
+                  {country.name}
+                </option>
+              ))}
+            </select>
+            {errors.country && (
+              <p className="text-sm text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-4 w-4" />
+                {errors.country.message}
+              </p>
+            )}
+          </div>
 
-export function OrderSummary({ cart }: OrderSummaryProps) {
-  if (!cart?.items?.length) {
-    return (
-      <div className="text-center py-8">
-        <ShoppingBag className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-        <p className="text-gray-500">No items in cart</p>
-      </div>
-    );
-  }
+          {/* Delivery Notes */}
+          <div className="space-y-2">
+            <Label htmlFor="notes">Delivery Notes (Optional)</Label>
+            <Textarea
+              {...register("notes")}
+              id="notes"
+              placeholder="Special delivery instructions, building access codes, etc."
+              rows={3}
+            />
+            {errors.notes && (
+              <p className="text-sm text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-4 w-4" />
+                {errors.notes.message}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
-  return (
-    <div className="space-y-4">
-      {/* Cart Items */}
-      <div className="space-y-4">
-        {cart.items.map((item) => (
-          <div key={item.product.id} className="flex items-center space-x-4">
-            <div className="relative h-12 w-12 rounded-md overflow-hidden bg-gray-100 flex-shrink-0">
-              {item.product.images?.length ? (
-                <Image
-                  src={
-                    item.product.images.find((img) => img.isMain)?.imageUrl ||
-                    item.product.images[0].imageUrl
-                  }
-                  alt={item.product.name}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full w-full bg-gray-200">
-                  <ShoppingBag className="h-6 w-6 text-gray-400" />
+      {/* Billing Address */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Billing Address
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Same as Shipping Checkbox */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="useSameForBilling"
+              checked={useSameForBilling}
+              onCheckedChange={handleUseSameForBillingChange}
+            />
+            <Label htmlFor="useSameForBilling" className="cursor-pointer">
+              Use same address for billing
+            </Label>
+          </div>
+
+          {/* Billing Address Fields (shown when different from shipping) */}
+          {!useSameForBilling && (
+            <>
+              <Separator className="my-4" />
+
+              {/* Billing Name Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="billingFirstName">First Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      {...register("billingFirstName")}
+                      id="billingFirstName"
+                      placeholder="John"
+                      className="pl-10"
+                    />
+                  </div>
+                  {errors.billingFirstName && (
+                    <p className="text-sm text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.billingFirstName.message}
+                    </p>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-medium text-gray-900 line-clamp-2">
-                {item.product.name}
-              </h4>
-              <p className="text-sm text-gray-500">Qty: {item.quantity}</p>
-            </div>
+                <div className="space-y-2">
+                  <Label htmlFor="billingLastName">Last Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      {...register("billingLastName")}
+                      id="billingLastName"
+                      placeholder="Doe"
+                      className="pl-10"
+                    />
+                  </div>
+                  {errors.billingLastName && (
+                    <p className="text-sm text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.billingLastName.message}
+                    </p>
+                  )}
+                </div>
+              </div>
 
-            <div className="text-sm font-medium text-gray-900">
-              {formatPrice(
-                (item.product.discountPrice || item.product.price) *
-                  item.quantity
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+              {/* Billing Phone */}
+              <div className="space-y-2">
+                <Label htmlFor="billingPhone">Phone Number</Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    {...register("billingPhone")}
+                    id="billingPhone"
+                    type="tel"
+                    placeholder="+250 123 456 789"
+                    className="pl-10"
+                  />
+                </div>
+                {errors.billingPhone && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.billingPhone.message}
+                  </p>
+                )}
+              </div>
 
-      <Separator />
+              {/* Billing Street Address */}
+              <div className="space-y-2">
+                <Label htmlFor="billingStreet">Street Address</Label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    {...register("billingStreet")}
+                    id="billingStreet"
+                    placeholder="123 Main Street, Apartment 4B"
+                    className="pl-10"
+                  />
+                </div>
+                {errors.billingStreet && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.billingStreet.message}
+                  </p>
+                )}
+              </div>
 
-      {/* Price Breakdown */}
-      <div className="space-y-2">
-        <div className="flex justify-between text-sm">
-          <span>Subtotal ({cart.totalItems} items)</span>
-          <span>{formatPrice(cart.subtotal)}</span>
-        </div>
+              {/* Billing City, State, ZIP */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="billingCity">City</Label>
+                  <Input
+                    {...register("billingCity")}
+                    id="billingCity"
+                    placeholder="Kigali"
+                  />
+                  {errors.billingCity && (
+                    <p className="text-sm text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.billingCity.message}
+                    </p>
+                  )}
+                </div>
 
-        {cart.totalDiscount > 0 && (
-          <div className="flex justify-between text-sm text-green-600">
-            <span>Discount</span>
-            <span>-{formatPrice(cart.totalDiscount)}</span>
-          </div>
-        )}
+                <div className="space-y-2">
+                  <Label htmlFor="billingState">State/Province</Label>
+                  <Input
+                    {...register("billingState")}
+                    id="billingState"
+                    placeholder="Kigali City"
+                  />
+                  {errors.billingState && (
+                    <p className="text-sm text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.billingState.message}
+                    </p>
+                  )}
+                </div>
 
-        <div className="flex justify-between text-sm">
-          <span>Shipping</span>
-          <span>Free</span>
-        </div>
+                <div className="space-y-2">
+                  <Label htmlFor="billingZipCode">ZIP/Postal Code</Label>
+                  <Input
+                    {...register("billingZipCode")}
+                    id="billingZipCode"
+                    placeholder="00100"
+                  />
+                  {errors.billingZipCode && (
+                    <p className="text-sm text-red-600 flex items-center gap-1">
+                      <AlertCircle className="h-4 w-4" />
+                      {errors.billingZipCode.message}
+                    </p>
+                  )}
+                </div>
+              </div>
 
-        <div className="flex justify-between text-sm">
-          <span>Tax</span>
-          <span>Calculated at checkout</span>
-        </div>
+              {/* Billing Country */}
+              <div className="space-y-2">
+                <Label htmlFor="billingCountry">Country</Label>
+                <select
+                  {...register("billingCountry")}
+                  id="billingCountry"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                >
+                  <option value="">Select a country</option>
+                  {countries.map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.name}
+                    </option>
+                  ))}
+                </select>
+                {errors.billingCountry && (
+                  <p className="text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errors.billingCountry.message}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
-        <Separator />
-
-        <div className="flex justify-between text-base font-medium">
-          <span>Total</span>
-          <span>{formatPrice(cart.totalPrice)}</span>
-        </div>
-      </div>
-    </div>
+      {/* Submit Button */}
+      <Button type="submit" className="w-full" disabled={!isValid}>
+        <Save className="mr-2 h-4 w-4" />
+        Continue to Payment
+      </Button>
+    </form>
   );
 }

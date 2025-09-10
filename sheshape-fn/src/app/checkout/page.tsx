@@ -1,13 +1,13 @@
 // src/app/checkout/page.tsx
 "use client";
 
-import { CheckoutFlow } from "@/components/checkout/CheckoutFlow";
-import { EnhancedCartDrawer } from "@/components/shop/EnhancedCartDrawer";
+import { CheckoutSteps } from "@/components/checkout/CheckoutSteps";
+import { EnhancedCartDrawer } from "@/components/cart/EnhancedCartDrawer";
 
 export default function CheckoutPage() {
   return (
     <>
-      <CheckoutFlow />
+      <CheckoutSteps />
       <EnhancedCartDrawer />
     </>
   );
