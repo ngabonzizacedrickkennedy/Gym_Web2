@@ -186,9 +186,7 @@ public class OrderController {
         return ResponseEntity.ok(order);
     }
 
-    /**
-     * Resend order confirmation email (admin only)
-     */
+
     @PostMapping("/{orderId}/resend-confirmation")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, String>> resendOrderConfirmation(@PathVariable Long orderId) {
