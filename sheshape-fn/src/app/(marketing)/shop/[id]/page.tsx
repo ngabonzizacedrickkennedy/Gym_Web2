@@ -6,12 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { formatPrice } from "@/lib/utils";
-import { useAuth } from "@/context/AuthContext";
-import { useEnhancedCart } from "@/context/EnhancedCartContext";
-
-// Inside your component, add these hooks
-const { isAuthenticated } = useAuth();
-const { addItem, toggleCart } = useEnhancedCart();
 
 // Services
 import { productService } from "@/services/productService";
@@ -110,26 +104,15 @@ export default function ProductDetailPage({
   const handleAddToCart = async () => {
     if (!product) return;
 
-    if (!isAuthenticated) {
-      router.push(
-        `/login?returnTo=${encodeURIComponent(window.location.pathname)}`
-      );
-      return;
-    }
-
-    if (!product.isActive || product.inventoryCount === 0) {
-      toast.error("This product is currently unavailable");
-      return;
-    }
-
     setIsAddingToCart(true);
 
     try {
-      await addItem(product.id, quantity); // ✅ REAL cart functionality
-      setQuantity(1);
-      toggleCart(); // Opens cart to show added item
+      // Add to cart logic here
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate API call
+      toast.success(`Added ${quantity} ${product.name} to cart!`);
     } catch (error) {
-      console.error("Failed to add to cart:", error);
+      toast.error("Failed to add item to cart. Please try again.");
+      console.log(error);
     } finally {
       setIsAddingToCart(false);
     }
