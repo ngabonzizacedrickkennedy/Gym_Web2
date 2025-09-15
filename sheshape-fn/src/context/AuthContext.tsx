@@ -315,37 +315,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Upload profile image
+  // Update the uploadProfileImage method:
   const uploadProfileImage = async (file: File): Promise<string> => {
     try {
-      setIsLoading(true);
-      if (!user) throw new Error("No user is logged in");
+      setIsLoading(true); // ADDED: Loading state
 
-      const response = await profileService.uploadProfilePicture(file);
+      const profilePictureUrl = await authService.uploadProfileImage(file);
 
-      // Update user state with new profile image
-      setUser((prevUser) => {
-        if (!prevUser) return null;
-
-        return {
-          ...prevUser,
+      // Update user state with new profile picture
+      if (user) {
+        setUser({
+          ...user,
           profile: {
-            ...prevUser.profile,
-            profilePictureUrl: response.profilePictureUrl,
+            ...user.profile,
+            profilePictureUrl,
           },
-        };
-      });
+        });
+      }
 
-      toast.success("Profile image updated");
-      return response.profilePictureUrl;
-    } catch (error) {
-      console.error("Failed to upload profile image:", error);
-      toast.error("Failed to upload profile image");
+      toast.success("Profile image updated successfully!"); // ADDED: Success message
+      return profilePictureUrl;
+    } catch (error: any) {
+      console.error("Profile image upload failed:", error);
+      toast.error(error.message || "Failed to upload profile image"); // ADDED: Error message
       throw error;
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // ADDED: Reset loading state
     }
   };
-
   // Request password reset
   const requestPasswordReset = async (email: string) => {
     try {

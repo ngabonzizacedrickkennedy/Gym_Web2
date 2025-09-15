@@ -83,12 +83,26 @@ export const authService = {
   },
   
   // Upload profile image
-  async uploadProfileImage(userId: number, file: File): Promise<string> {
+  // Replace the existing uploadProfileImage method with:
+// Upload profile image
+// Upload profile image
+async uploadProfileImage(file: File): Promise<string> {
+  try {
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('file', file); // CHANGED: 'image' to 'file' to match backend
     
-    const response = await api.post<{filename: string, message: string}>(
-      `/api/users/${userId}/profile/image`,
+    const response = await api.post<{
+      success: boolean;
+      message: string;
+      data: {
+        profilePictureUrl: string;
+        fileName: string;
+        fileSize: number;
+        contentType: string;
+        uploadedAt: string;
+      };
+    }>(
+      '/api/profile/picture', 
       formData,
       {
         headers: {
@@ -97,6 +111,23 @@ export const authService = {
       }
     );
     
-    return response.data.filename;
+    // ADDED: Proper response handling
+    if (response.data.success) {
+      return response.data.data.profilePictureUrl;
+    } else {
+      throw new Error(response.data.message || 'Failed to upload image');
+    }
+  } catch (error: any) {
+    console.error('Profile image upload error:', error);
+    
+    // ADDED: Better error handling
+    if (error.response?.data?.message) {
+      throw new Error(error.response.data.message);
+    } else if (error.message) {
+      throw new Error(error.message);
+    } else {
+      throw new Error('Failed to upload profile image');
+    }
   }
+}
 };

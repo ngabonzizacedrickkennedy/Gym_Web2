@@ -41,53 +41,61 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle,
+  Heart,
+  Shield,
+  Clock,
 } from "lucide-react";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Progress } from "@/components/ui/progress";
 
-// Form schema using zod
+// CORRECTED Form schema - matches backend exactly
 const profileSetupSchema = z.object({
-  // Personal Information
+  // Personal Information - MATCH BACKEND EXACTLY
   firstName: z.string().min(1, { message: "First name is required" }),
   lastName: z.string().min(1, { message: "Last name is required" }),
+  dateOfBirth: z.string().optional(),
+  gender: z.enum(["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY"]).optional(),
   phoneNumber: z.string().optional(),
-  bio: z
-    .string()
-    .max(500, { message: "Bio cannot exceed 500 characters" })
-    .optional(),
 
-  // Fitness Information
-  age: z
-    .string()
-    .optional()
-    .transform((val) => (val === "" ? undefined : Number(val))),
-  height: z
-    .string()
-    .optional()
-    .transform((val) => (val === "" ? undefined : Number(val))),
-  weight: z
-    .string()
-    .optional()
-    .transform((val) => (val === "" ? undefined : Number(val))),
-  activityLevel: z
-    .enum(["sedentary", "light", "moderate", "active", "very_active"])
+  // Physical Attributes - MATCH BACKEND FIELD NAMES
+  heightCm: z.number().min(100).max(250).optional(),
+  currentWeightKg: z.number().min(30).max(300).optional(),
+  targetWeightKg: z.number().min(30).max(300).optional(),
+
+  // Fitness Information - MATCH BACKEND ENUMS
+  fitnessLevel: z
+    .enum(["BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT"])
     .optional(),
-  fitnessGoal: z
+  primaryGoal: z
     .enum([
-      "weight_loss",
-      "muscle_gain",
-      "maintenance",
-      "overall_health",
-      "flexibility",
+      "WEIGHT_LOSS",
+      "MUSCLE_GAIN",
+      "STRENGTH_BUILDING",
+      "ENDURANCE",
+      "FLEXIBILITY",
+      "GENERAL_FITNESS",
     ])
     .optional(),
-  location: z.string().optional(),
 
-  // Preferences
+  // Fitness Details
+  workoutFrequency: z.number().min(1).max(7).optional(),
+  workoutDuration: z.number().min(15).max(180).optional(),
   preferredWorkoutDays: z.array(z.string()).optional(),
-  workoutDuration: z.string().optional(),
+  preferredWorkoutTimes: z.array(z.string()).optional(),
+
+  // Health Information - CRITICAL MISSING FIELDS
+  healthConditions: z.array(z.string()).optional(),
+  medications: z.array(z.string()).optional(),
+  emergencyContactName: z.string().optional(),
+  emergencyContactPhone: z.string().optional(),
   dietaryRestrictions: z.array(z.string()).optional(),
-  fitnessLevel: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+
+  // Preferences - CRITICAL MISSING FIELD
+  timezone: z.string().optional(),
+  language: z.string().optional(),
+  emailNotifications: z.boolean().optional(),
+  pushNotifications: z.boolean().optional(),
+  privacyLevel: z.enum(["PUBLIC", "FRIENDS", "PRIVATE"]).optional(),
 });
 
 type ProfileSetupFormValues = z.infer<typeof profileSetupSchema>;
@@ -100,9 +108,10 @@ export function ProfileSetupForm() {
   const [setupProgress, setSetupProgress] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { user } = useAuth();
+  const { user, setupProfile } = useAuth();
   const router = useRouter();
 
+  // FIXED useForm with correct default values
   const {
     register,
     handleSubmit,
@@ -116,13 +125,37 @@ export function ProfileSetupForm() {
       firstName: user?.profile?.firstName || "",
       lastName: user?.profile?.lastName || "",
       phoneNumber: user?.profile?.phoneNumber || "",
-      bio: user?.profile?.bio || "",
-      activityLevel: "moderate",
-      fitnessGoal: "overall_health",
-      preferredWorkoutDays: [],
-      workoutDuration: "30-45",
+
+      // CRITICAL: Add default values for missing fields
+      gender: undefined,
+      dateOfBirth: "",
+      timezone: "UTC", // Default timezone instead of undefined
+      language: "en",
+
+      // Fitness defaults with correct enum values
+      fitnessLevel: "BEGINNER",
+      primaryGoal: "GENERAL_FITNESS",
+
+      // Health information defaults
+      healthConditions: [],
+      medications: [],
+      emergencyContactName: "",
+      emergencyContactPhone: "",
       dietaryRestrictions: [],
-      fitnessLevel: "beginner",
+
+      // Preferences
+      emailNotifications: true,
+      pushNotifications: true,
+      privacyLevel: "PRIVATE",
+
+      // Arrays and numbers
+      preferredWorkoutDays: [],
+      preferredWorkoutTimes: [],
+      workoutFrequency: undefined,
+      workoutDuration: undefined,
+      heightCm: undefined,
+      currentWeightKg: undefined,
+      targetWeightKg: undefined,
     },
     mode: "onChange",
   });
@@ -133,24 +166,25 @@ export function ProfileSetupForm() {
     let completedFields = 0;
     let totalFields = 0;
 
-    // Count filled personal fields
-    ["firstName", "lastName", "phoneNumber", "bio", "location"].forEach(
-      (field) => {
-        totalFields++;
-        if (values[field as keyof ProfileSetupFormValues]) completedFields++;
-      }
-    );
+    // Count basic required fields
+    const basicFields = ["firstName", "lastName"];
+    basicFields.forEach((field) => {
+      totalFields++;
+      if (values[field as keyof ProfileSetupFormValues]) completedFields++;
+    });
 
-    // Count filled fitness fields
-    ["age", "height", "weight", "activityLevel", "fitnessGoal"].forEach(
-      (field) => {
-        totalFields++;
-        if (values[field as keyof ProfileSetupFormValues]) completedFields++;
-      }
-    );
-
-    // Count filled preferences fields
-    ["workoutDuration", "fitnessLevel"].forEach((field) => {
+    // Count optional but important fields
+    const optionalFields = [
+      "phoneNumber",
+      "gender",
+      "dateOfBirth",
+      "heightCm",
+      "currentWeightKg",
+      "fitnessLevel",
+      "primaryGoal",
+      "timezone",
+    ];
+    optionalFields.forEach((field) => {
       totalFields++;
       if (values[field as keyof ProfileSetupFormValues]) completedFields++;
     });
@@ -202,11 +236,13 @@ export function ProfileSetupForm() {
 
   const nextTab = () => {
     if (activeTab === "personal") setActiveTab("fitness");
-    else if (activeTab === "fitness") setActiveTab("preferences");
+    else if (activeTab === "fitness") setActiveTab("health");
+    else if (activeTab === "health") setActiveTab("preferences");
   };
 
   const previousTab = () => {
-    if (activeTab === "preferences") setActiveTab("fitness");
+    if (activeTab === "preferences") setActiveTab("health");
+    else if (activeTab === "health") setActiveTab("fitness");
     else if (activeTab === "fitness") setActiveTab("personal");
   };
 
@@ -236,42 +272,90 @@ export function ProfileSetupForm() {
     updateProgress();
   };
 
+  const toggleHealthCondition = (condition: string) => {
+    const currentConditions = getValues("healthConditions") || [];
+    if (currentConditions.includes(condition)) {
+      setValue(
+        "healthConditions",
+        currentConditions.filter((c) => c !== condition)
+      );
+    } else {
+      setValue("healthConditions", [...currentConditions, condition]);
+    }
+    updateProgress();
+  };
+
+  const toggleMedication = (medication: string) => {
+    const currentMedications = getValues("medications") || [];
+    if (currentMedications.includes(medication)) {
+      setValue(
+        "medications",
+        currentMedications.filter((m) => m !== medication)
+      );
+    } else {
+      setValue("medications", [...currentMedications, medication]);
+    }
+    updateProgress();
+  };
+
+  // FIXED onSubmit function with correct mapping
   const onSubmit = async (data: ProfileSetupFormValues) => {
     setError(null);
-    setSuccessMessage(null);
     setIsLoading(true);
 
     try {
-      // In a real app, this would make an API call to update the profile
-      // and upload the profile image if changed
+      // CRITICAL: Map form data to correct backend fields
+      const profileData = {
+        // Personal Information - direct mapping
+        firstName: data.firstName,
+        lastName: data.lastName,
+        dateOfBirth: data.dateOfBirth,
+        gender: data.gender,
+        phoneNumber: data.phoneNumber,
 
-      // For demo purposes, simulate API call
-      console.log(data.firstName);
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+        // Physical Attributes - correct field names
+        heightCm: data.heightCm,
+        currentWeightKg: data.currentWeightKg,
+        targetWeightKg: data.targetWeightKg,
 
-      // Show success message
-      setSuccessMessage(
-        "Your profile has been successfully set up! You'll be redirected to your dashboard in a moment."
-      );
+        // Fitness Information - correct enums and field names
+        fitnessLevel: data.fitnessLevel,
+        primaryGoal: data.primaryGoal,
+        workoutFrequency: data.workoutFrequency,
+        workoutDuration: data.workoutDuration,
+        preferredWorkoutDays: data.preferredWorkoutDays,
+        preferredWorkoutTimes: data.preferredWorkoutTimes,
 
-      // Redirect to dashboard after successful setup
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 3000);
-    } catch (err: unknown) {
+        // Health Information - CRITICAL: Include these fields
+        healthConditions: data.healthConditions || [],
+        medications: data.medications || [],
+        emergencyContactName: data.emergencyContactName,
+        emergencyContactPhone: data.emergencyContactPhone,
+        dietaryRestrictions: data.dietaryRestrictions || [],
+
+        // Preferences - CRITICAL: Include timezone
+        timezone: data.timezone,
+        language: data.language || "en",
+        emailNotifications: data.emailNotifications ?? true,
+        pushNotifications: data.pushNotifications ?? true,
+        privacyLevel: data.privacyLevel || "PRIVATE",
+      };
+
+      console.log("Sending profile data:", profileData);
+
+      await setupProfile(profileData);
+
+      setSuccessMessage("Profile setup completed successfully!");
+      router.push("/dashboard");
+    } catch (err) {
       console.error("Profile setup error:", err);
-      const errorMessage =
-        err instanceof Error && "response" in err
-          ? (err as { response?: { data?: { message?: string } } }).response
-              ?.data?.message
-          : "Profile setup failed. Please try again.";
-      setError(errorMessage || "Profile setup failed. Please try again.");
+      setError("Profile setup failed. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Watch form inputs to enable/disable the "Next" button
+  // Watch form inputs to enable/disable buttons
   const firstName = watch("firstName");
   const lastName = watch("lastName");
   const isPersonalInfoComplete = firstName && lastName;
@@ -310,10 +394,13 @@ export function ProfileSetupForm() {
 
         <form onSubmit={handleSubmit(onSubmit)}>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-3 mb-8">
-              <TabsTrigger value="personal">Personal Information</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4 mb-8">
+              <TabsTrigger value="personal">Personal</TabsTrigger>
               <TabsTrigger value="fitness" disabled={!isPersonalInfoComplete}>
-                Fitness Profile
+                Fitness
+              </TabsTrigger>
+              <TabsTrigger value="health" disabled={!isPersonalInfoComplete}>
+                Health
               </TabsTrigger>
               <TabsTrigger
                 value="preferences"
@@ -376,10 +463,6 @@ export function ProfileSetupForm() {
                       }`}
                       disabled={isLoading}
                       {...register("firstName")}
-                      onChange={(e) => {
-                        register("firstName").onChange(e);
-                        updateProgress();
-                      }}
                     />
                   </div>
                   {errors.firstName && (
@@ -404,10 +487,6 @@ export function ProfileSetupForm() {
                       }`}
                       disabled={isLoading}
                       {...register("lastName")}
-                      onChange={(e) => {
-                        register("lastName").onChange(e);
-                        updateProgress();
-                      }}
                     />
                   </div>
                   {errors.lastName && (
@@ -418,7 +497,41 @@ export function ProfileSetupForm() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="phoneNumber">Phone Number (Optional)</Label>
+                  <Label htmlFor="dateOfBirth">Date of Birth</Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
+                    <Input
+                      id="dateOfBirth"
+                      type="date"
+                      className="pl-10"
+                      disabled={isLoading}
+                      {...register("dateOfBirth")}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="gender">Gender</Label>
+                  <Select
+                    value={getValues("gender")}
+                    onValueChange={(value) => setValue("gender", value as any)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MALE">Male</SelectItem>
+                      <SelectItem value="FEMALE">Female</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                      <SelectItem value="PREFER_NOT_TO_SAY">
+                        Prefer not to say
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="phoneNumber">Phone Number</Label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
                     <Input
@@ -427,52 +540,8 @@ export function ProfileSetupForm() {
                       className="pl-10"
                       disabled={isLoading}
                       {...register("phoneNumber")}
-                      onChange={(e) => {
-                        register("phoneNumber").onChange(e);
-                        updateProgress();
-                      }}
                     />
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="location">Location (Optional)</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
-                    <Input
-                      id="location"
-                      placeholder="City, Country"
-                      className="pl-10"
-                      disabled={isLoading}
-                      {...register("location")}
-                      onChange={(e) => {
-                        register("location").onChange(e);
-                        updateProgress();
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="bio">Bio (Optional)</Label>
-                  <Textarea
-                    id="bio"
-                    placeholder="Tell us a bit about yourself and your fitness journey..."
-                    className="resize-none h-24"
-                    disabled={isLoading}
-                    {...register("bio")}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
-                      register("bio").onChange(e);
-                      updateProgress();
-                    }}
-                  />
-
-                  {errors.bio && (
-                    <p className="text-sm text-red-500">{errors.bio.message}</p>
-                  )}
-                  <p className="text-xs text-neutral-500 text-right">
-                    {watch("bio")?.length || 0}/500 characters
-                  </p>
                 </div>
               </div>
 
@@ -491,58 +560,52 @@ export function ProfileSetupForm() {
             <TabsContent value="fitness" className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="age">Age (Optional)</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
-                    <Input
-                      id="age"
-                      type="number"
-                      placeholder="25"
-                      className="pl-10"
-                      disabled={isLoading}
-                      {...register("age")}
-                      onChange={(e) => {
-                        register("age").onChange(e);
-                        updateProgress();
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="height">Height in cm (Optional)</Label>
+                  <Label htmlFor="heightCm">Height (cm)</Label>
                   <div className="relative">
                     <Ruler className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
                     <Input
-                      id="height"
+                      id="heightCm"
                       type="number"
-                      placeholder="165"
+                      min="100"
+                      max="250"
+                      placeholder="170"
                       className="pl-10"
                       disabled={isLoading}
-                      {...register("height")}
-                      onChange={(e) => {
-                        register("height").onChange(e);
-                        updateProgress();
-                      }}
+                      {...register("heightCm", { valueAsNumber: true })}
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="weight">Weight in kg (Optional)</Label>
+                  <Label htmlFor="currentWeightKg">Current Weight (kg)</Label>
                   <div className="relative">
                     <Weight className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
                     <Input
-                      id="weight"
+                      id="currentWeightKg"
                       type="number"
+                      min="30"
+                      max="300"
+                      placeholder="70"
+                      className="pl-10"
+                      disabled={isLoading}
+                      {...register("currentWeightKg", { valueAsNumber: true })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="targetWeightKg">Target Weight (kg)</Label>
+                  <div className="relative">
+                    <Weight className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-500" />
+                    <Input
+                      id="targetWeightKg"
+                      type="number"
+                      min="30"
+                      max="300"
                       placeholder="65"
                       className="pl-10"
                       disabled={isLoading}
-                      {...register("weight")}
-                      onChange={(e) => {
-                        register("weight").onChange(e);
-                        updateProgress();
-                      }}
+                      {...register("targetWeightKg", { valueAsNumber: true })}
                     />
                   </div>
                 </div>
@@ -550,126 +613,219 @@ export function ProfileSetupForm() {
                 <div className="space-y-2">
                   <Label htmlFor="fitnessLevel">Fitness Level</Label>
                   <Select
-                    onValueChange={(value) => {
-                      setValue(
-                        "fitnessLevel",
-                        value as ProfileSetupFormValues["fitnessLevel"]
-                      );
-                      updateProgress();
-                    }}
-                    defaultValue={watch("fitnessLevel")}
+                    value={getValues("fitnessLevel")}
+                    onValueChange={(value) =>
+                      setValue("fitnessLevel", value as any)
+                    }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select your fitness level" />
+                      <SelectValue placeholder="Select fitness level" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="beginner">Beginner</SelectItem>
-                      <SelectItem value="intermediate">Intermediate</SelectItem>
-                      <SelectItem value="advanced">Advanced</SelectItem>
+                      <SelectItem value="BEGINNER">Beginner</SelectItem>
+                      <SelectItem value="INTERMEDIATE">Intermediate</SelectItem>
+                      <SelectItem value="ADVANCED">Advanced</SelectItem>
+                      <SelectItem value="EXPERT">Expert</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2 md:col-span-2">
-                  <Label>Activity Level</Label>
+                  <Label>Primary Fitness Goal</Label>
                   <RadioGroup
-                    defaultValue="moderate"
-                    value={watch("activityLevel")}
-                    onValueChange={(value) => {
-                      setValue(
-                        "activityLevel",
-                        value as ProfileSetupFormValues["activityLevel"]
-                      );
-                      updateProgress();
-                    }}
+                    value={watch("primaryGoal")}
+                    onValueChange={(value) =>
+                      setValue("primaryGoal", value as any)
+                    }
                   >
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="sedentary" id="sedentary" />
-                        <Label htmlFor="sedentary" className="cursor-pointer">
-                          Sedentary
+                        <RadioGroupItem value="WEIGHT_LOSS" id="WEIGHT_LOSS" />
+                        <Label htmlFor="WEIGHT_LOSS" className="cursor-pointer">
+                          Weight Loss
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="light" id="light" />
-                        <Label htmlFor="light" className="cursor-pointer">
-                          Lightly Active
+                        <RadioGroupItem value="MUSCLE_GAIN" id="MUSCLE_GAIN" />
+                        <Label htmlFor="MUSCLE_GAIN" className="cursor-pointer">
+                          Muscle Gain
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="moderate" id="moderate" />
-                        <Label htmlFor="moderate" className="cursor-pointer">
-                          Moderately Active
+                        <RadioGroupItem
+                          value="STRENGTH_BUILDING"
+                          id="STRENGTH_BUILDING"
+                        />
+                        <Label
+                          htmlFor="STRENGTH_BUILDING"
+                          className="cursor-pointer"
+                        >
+                          Strength Building
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="active" id="active" />
-                        <Label htmlFor="active" className="cursor-pointer">
-                          Very Active
+                        <RadioGroupItem value="ENDURANCE" id="ENDURANCE" />
+                        <Label htmlFor="ENDURANCE" className="cursor-pointer">
+                          Endurance
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="very_active" id="very_active" />
-                        <Label htmlFor="very_active" className="cursor-pointer">
-                          Extremely Active
+                        <RadioGroupItem value="FLEXIBILITY" id="FLEXIBILITY" />
+                        <Label htmlFor="FLEXIBILITY" className="cursor-pointer">
+                          Flexibility
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem
+                          value="GENERAL_FITNESS"
+                          id="GENERAL_FITNESS"
+                        />
+                        <Label
+                          htmlFor="GENERAL_FITNESS"
+                          className="cursor-pointer"
+                        >
+                          General Fitness
                         </Label>
                       </div>
                     </div>
                   </RadioGroup>
                 </div>
 
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Fitness Goal</Label>
-                  <RadioGroup
-                    defaultValue="overall_health"
-                    value={watch("fitnessGoal")}
-                    onValueChange={(value) => {
-                      setValue(
-                        "fitnessGoal",
-                        value as ProfileSetupFormValues["fitnessGoal"]
-                      );
-                      updateProgress();
-                    }}
-                  >
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="weight_loss" id="weight_loss" />
-                        <Label htmlFor="weight_loss" className="cursor-pointer">
-                          Weight Loss
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="muscle_gain" id="muscle_gain" />
-                        <Label htmlFor="muscle_gain" className="cursor-pointer">
-                          Muscle Gain
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="maintenance" id="maintenance" />
-                        <Label htmlFor="maintenance" className="cursor-pointer">
-                          Maintenance
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem
-                          value="overall_health"
-                          id="overall_health"
-                        />
-                        <Label
-                          htmlFor="overall_health"
-                          className="cursor-pointer"
+                <div className="space-y-2">
+                  <Label htmlFor="workoutFrequency">Workouts per week</Label>
+                  <Input
+                    id="workoutFrequency"
+                    type="number"
+                    min="1"
+                    max="7"
+                    placeholder="3"
+                    disabled={isLoading}
+                    {...register("workoutFrequency", { valueAsNumber: true })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="workoutDuration">
+                    Workout duration (minutes)
+                  </Label>
+                  <Input
+                    id="workoutDuration"
+                    type="number"
+                    min="15"
+                    max="180"
+                    placeholder="45"
+                    disabled={isLoading}
+                    {...register("workoutDuration", { valueAsNumber: true })}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between mt-4">
+                <Button type="button" variant="outline" onClick={previousTab}>
+                  <ArrowLeft className="mr-2 h-4 w-4" /> Back
+                </Button>
+                <Button type="button" onClick={nextTab}>
+                  Next: Health Info <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </TabsContent>
+
+            {/* Health Information Tab */}
+            <TabsContent value="health" className="space-y-6">
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactName">
+                      <Shield className="inline h-4 w-4 mr-1" />
+                      Emergency Contact Name
+                    </Label>
+                    <Input
+                      id="emergencyContactName"
+                      placeholder="John Doe"
+                      disabled={isLoading}
+                      {...register("emergencyContactName")}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="emergencyContactPhone">
+                      <Phone className="inline h-4 w-4 mr-1" />
+                      Emergency Contact Phone
+                    </Label>
+                    <Input
+                      id="emergencyContactPhone"
+                      placeholder="+1234567890"
+                      disabled={isLoading}
+                      {...register("emergencyContactPhone")}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="block mb-3">
+                    <Heart className="inline h-4 w-4 mr-1" />
+                    Health Conditions (if any)
+                  </Label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {[
+                      "None",
+                      "Diabetes",
+                      "Hypertension",
+                      "Heart Disease",
+                      "Asthma",
+                      "Arthritis",
+                      "Other",
+                    ].map((condition) => {
+                      const isSelected =
+                        watch("healthConditions")?.includes(condition);
+                      return (
+                        <Button
+                          key={condition}
+                          type="button"
+                          variant={isSelected ? "default" : "outline"}
+                          className={`py-1 h-10 ${
+                            isSelected ? "bg-primary" : ""
+                          }`}
+                          onClick={() => toggleHealthCondition(condition)}
                         >
-                          Overall Health
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="flexibility" id="flexibility" />
-                        <Label htmlFor="flexibility" className="cursor-pointer">
-                          Flexibility
-                        </Label>
-                      </div>
-                    </div>
-                  </RadioGroup>
+                          {condition}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="block mb-3">
+                    Current Medications (if any)
+                  </Label>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {[
+                      "None",
+                      "Blood Pressure",
+                      "Diabetes",
+                      "Heart",
+                      "Pain Relief",
+                      "Vitamins",
+                      "Other",
+                    ].map((medication) => {
+                      const isSelected =
+                        watch("medications")?.includes(medication);
+                      return (
+                        <Button
+                          key={medication}
+                          type="button"
+                          variant={isSelected ? "default" : "outline"}
+                          className={`py-1 h-10 ${
+                            isSelected ? "bg-primary" : ""
+                          }`}
+                          onClick={() => toggleMedication(medication)}
+                        >
+                          {medication}
+                        </Button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -686,6 +842,91 @@ export function ProfileSetupForm() {
             {/* Preferences Tab */}
             <TabsContent value="preferences" className="space-y-6">
               <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="timezone">
+                      <Clock className="inline h-4 w-4 mr-1" />
+                      Timezone
+                    </Label>
+                    <Select
+                      value={getValues("timezone")}
+                      onValueChange={(value) => setValue("timezone", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select timezone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="UTC">UTC</SelectItem>
+                        <SelectItem value="America/New_York">
+                          Eastern Time
+                        </SelectItem>
+                        <SelectItem value="America/Chicago">
+                          Central Time
+                        </SelectItem>
+                        <SelectItem value="America/Denver">
+                          Mountain Time
+                        </SelectItem>
+                        <SelectItem value="America/Los_Angeles">
+                          Pacific Time
+                        </SelectItem>
+                        <SelectItem value="Europe/London">London</SelectItem>
+                        <SelectItem value="Europe/Paris">Paris</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="language">Language</Label>
+                    <Select
+                      value={getValues("language")}
+                      onValueChange={(value) => setValue("language", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select language" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="en">English</SelectItem>
+                        <SelectItem value="es">Spanish</SelectItem>
+                        <SelectItem value="fr">French</SelectItem>
+                        <SelectItem value="de">German</SelectItem>
+                        <SelectItem value="it">Italian</SelectItem>
+                        <SelectItem value="pt">Portuguese</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Privacy Level</Label>
+                  <RadioGroup
+                    value={watch("privacyLevel")}
+                    onValueChange={(value) =>
+                      setValue("privacyLevel", value as any)
+                    }
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="PUBLIC" id="PUBLIC" />
+                        <Label htmlFor="PUBLIC" className="cursor-pointer">
+                          Public - Anyone can see your profile
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="FRIENDS" id="FRIENDS" />
+                        <Label htmlFor="FRIENDS" className="cursor-pointer">
+                          Friends Only - Only friends can see your profile
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="PRIVATE" id="PRIVATE" />
+                        <Label htmlFor="PRIVATE" className="cursor-pointer">
+                          Private - Only you can see your profile
+                        </Label>
+                      </div>
+                    </div>
+                  </RadioGroup>
+                </div>
+
                 <div>
                   <Label className="block mb-3">Preferred Workout Days</Label>
                   <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
@@ -719,34 +960,12 @@ export function ProfileSetupForm() {
                 </div>
 
                 <div>
-                  <Label htmlFor="workoutDuration">
-                    Preferred Workout Duration
-                  </Label>
-                  <Select
-                    onValueChange={(value) => {
-                      setValue("workoutDuration", value);
-                      updateProgress();
-                    }}
-                    defaultValue={watch("workoutDuration")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select workout duration" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="15-30">15-30 minutes</SelectItem>
-                      <SelectItem value="30-45">30-45 minutes</SelectItem>
-                      <SelectItem value="45-60">45-60 minutes</SelectItem>
-                      <SelectItem value="60+">60+ minutes</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
                   <Label className="block mb-3">
                     Dietary Restrictions (if any)
                   </Label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     {[
+                      "None",
                       "Vegetarian",
                       "Vegan",
                       "Gluten-Free",
@@ -754,7 +973,6 @@ export function ProfileSetupForm() {
                       "Nut-Free",
                       "Keto",
                       "Paleo",
-                      "None",
                     ].map((restriction) => {
                       const isSelected = watch("dietaryRestrictions")?.includes(
                         restriction
@@ -773,6 +991,60 @@ export function ProfileSetupForm() {
                         </Button>
                       );
                     })}
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                  <Label className="text-base font-medium">
+                    Notification Preferences
+                  </Label>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-base">Email Notifications</Label>
+                        <p className="text-sm text-gray-600">
+                          Receive workout reminders and progress updates via
+                          email
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="emailNotifications"
+                          className="rounded border-gray-300"
+                          {...register("emailNotifications")}
+                        />
+                        <Label
+                          htmlFor="emailNotifications"
+                          className="cursor-pointer"
+                        >
+                          {watch("emailNotifications") ? "Enabled" : "Disabled"}
+                        </Label>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-base">Push Notifications</Label>
+                        <p className="text-sm text-gray-600">
+                          Get instant notifications on your device
+                        </p>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id="pushNotifications"
+                          className="rounded border-gray-300"
+                          {...register("pushNotifications")}
+                        />
+                        <Label
+                          htmlFor="pushNotifications"
+                          className="cursor-pointer"
+                        >
+                          {watch("pushNotifications") ? "Enabled" : "Disabled"}
+                        </Label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
