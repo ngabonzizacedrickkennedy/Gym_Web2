@@ -7,6 +7,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { formatPrice } from "@/lib/utils";
 
+// Context imports - Added Step 1
+import { useAuth } from "@/context/AuthContext";
+import { useEnhancedCart } from "@/context/EnhancedCartContext";
+
 // Services
 import { productService } from "@/services/productService";
 
@@ -44,6 +48,10 @@ export default function ProductDetailPage({
 }) {
   const router = useRouter();
   const productId = use(params);
+
+  // Step 2: Add the hooks after existing useState declarations
+  const { isAuthenticated } = useAuth();
+  const { addItem } = useEnhancedCart();
 
   // State
   const [product, setProduct] = useState<Product | null>(null);
@@ -101,15 +109,28 @@ export default function ProductDetailPage({
     }
   };
 
+  // Step 3: Replace the handleAddToCart function entirely
   const handleAddToCart = async () => {
     if (!product) return;
 
     setIsAddingToCart(true);
 
     try {
-      // Add to cart logic here
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate API call
-      toast.success(`Added ${quantity} ${product.name} to cart!`);
+      // Check if user is authenticated
+      if (!isAuthenticated) {
+        toast.error("Please log in to add items to cart");
+        router.push(
+          `/login?returnTo=${encodeURIComponent(window.location.pathname)}`
+        );
+        return;
+      }
+
+      // Add to cart using the proper cart context
+      await addItem(product.id, quantity);
+
+      // Success toast is handled in the cart context
+      // Now redirect to checkout page
+      router.push("/checkout");
     } catch (error) {
       toast.error("Failed to add item to cart. Please try again.");
       console.log(error);
