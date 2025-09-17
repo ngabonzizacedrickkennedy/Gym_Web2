@@ -2,6 +2,7 @@ package com.sheshape.service.order;
 
 import com.sheshape.dto.order.CheckoutRequestDto;
 import com.sheshape.dto.order.OrderDto;
+import com.sheshape.dto.order.PaymentDetailsDto;
 import com.sheshape.model.order.Order;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -58,7 +59,7 @@ public interface OrderService {
     /**
      * Process payment for order
      */
-    boolean processPayment(Long orderId, CheckoutRequestDto.PaymentDetailsDto paymentDetails);
+    boolean processPayment(Long orderId, PaymentDetailsDto paymentDetails);
 
     /**
      * Send order confirmation email

@@ -1,7 +1,9 @@
 package com.sheshape.service.order.impl;
 
+import com.sheshape.dto.order.AddressDto;
 import com.sheshape.dto.order.CheckoutRequestDto;
 import com.sheshape.dto.order.OrderDto;
+import com.sheshape.dto.order.PaymentDetailsDto;
 import com.sheshape.exception.BadRequestException;
 import com.sheshape.exception.ResourceNotFoundException;
 import com.sheshape.model.Product;
@@ -62,24 +64,34 @@ public class OrderServiceImpl implements OrderService {
             throw new BadRequestException("Cart contains invalid items. Please review your cart.");
         }
 
-        // Create order
+        // Calculate totals
+        BigDecimal subtotal = calculateSubtotal(cart);
+        BigDecimal shippingAmount = calculateShippingAmount(cart, checkoutRequest.getShippingAddress());
+        BigDecimal taxAmount = calculateTaxAmount(subtotal);
+        BigDecimal totalAmount = subtotal.add(shippingAmount).add(taxAmount);
+
+        // Create order with generated order number
         Order order = Order.builder()
                 .user(user)
+                .orderNumber(generateOrderNumber())
                 .status(Order.OrderStatus.PENDING)
                 .paymentStatus(Order.PaymentStatus.PENDING)
                 .paymentMethod(checkoutRequest.getPaymentMethod())
-                .shippingAddress(checkoutRequest.getShippingAddress())
+                .shippingAddress(checkoutRequest.getShippingAddress().toFormattedString())
                 .billingAddress(checkoutRequest.getBillingAddress() != null ?
-                        checkoutRequest.getBillingAddress() : checkoutRequest.getShippingAddress())
+                        checkoutRequest.getBillingAddress().toFormattedString() :
+                        checkoutRequest.getShippingAddress().toFormattedString())
                 .customerNotes(checkoutRequest.getCustomerNotes())
-                .taxAmount(BigDecimal.ZERO)
-                .shippingAmount(calculateShippingAmount(cart))
+                .subtotal(subtotal)
+                .taxAmount(taxAmount)
+                .shippingAmount(shippingAmount)
+                .totalAmount(totalAmount)
                 .discountAmount(BigDecimal.ZERO)
+                .estimatedDeliveryDate(calculateEstimatedDeliveryDate())
                 .items(new ArrayList<>())
                 .build();
 
         // Convert cart items to order items
-        BigDecimal subtotal = BigDecimal.ZERO;
         for (CartItem cartItem : cart.getItems()) {
             Product product = cartItem.getProduct();
 
@@ -88,12 +100,13 @@ public class OrderServiceImpl implements OrderService {
                 throw new BadRequestException("Insufficient inventory for product: " + product.getName());
             }
 
+            // Use the existing OrderItem structure from your original code
             OrderItem orderItem = OrderItem.builder()
                     .order(order)
                     .product(product)
                     .quantity(cartItem.getQuantity())
-                    .price(product.getPrice())
-                    .discountPrice(product.getDiscountPrice())
+                    .price(product.getPrice()) // Use the existing 'price' field
+                    .discountPrice(product.getDiscountPrice()) // Use the existing 'discountPrice' field
                     .productName(product.getName())
                     .productDescription(product.getDescription())
                     .productCategory(product.getCategories().isEmpty() ? null :
@@ -101,8 +114,7 @@ public class OrderServiceImpl implements OrderService {
                     .productImageUrl(getProductMainImageUrl(product))
                     .build();
 
-            order.addItem(orderItem);
-            subtotal = subtotal.add(orderItem.getTotalPrice());
+            order.getItems().add(orderItem);
 
             // Update inventory
             if (!productService.updateInventory(product.getId(), cartItem.getQuantity())) {
@@ -110,20 +122,20 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        order.setSubtotal(subtotal);
-        order.calculateTotals();
-
         // Save order
         Order savedOrder = orderRepository.save(order);
 
-        // Process payment
+        // Process payment if payment details provided
         if (checkoutRequest.getPaymentDetails() != null) {
             boolean paymentSuccess = processPayment(savedOrder.getId(), checkoutRequest.getPaymentDetails());
             if (paymentSuccess) {
                 savedOrder.setPaymentStatus(Order.PaymentStatus.PAID);
                 savedOrder.setStatus(Order.OrderStatus.CONFIRMED);
+                savedOrder = orderRepository.save(savedOrder);
             } else {
                 savedOrder.setPaymentStatus(Order.PaymentStatus.FAILED);
+                savedOrder.setStatus(Order.OrderStatus.CANCELLED);
+                savedOrder = orderRepository.save(savedOrder);
                 throw new BadRequestException("Payment processing failed");
             }
         }
@@ -240,7 +252,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public boolean processPayment(Long orderId, CheckoutRequestDto.PaymentDetailsDto paymentDetails) {
+    public boolean processPayment(Long orderId, PaymentDetailsDto paymentDetails) {
         // This is a mock implementation - in real application, you would integrate with payment providers
         // like Stripe, PayPal, etc.
 
@@ -261,7 +273,8 @@ public class OrderServiceImpl implements OrderService {
                 }
 
                 // Mock card validation - in real app, use payment gateway
-                if (paymentDetails.getCardNumber().length() < 13) {
+                String cleanCardNumber = paymentDetails.getCardNumber().replaceAll("\\s", "");
+                if (cleanCardNumber.length() < 13) {
                     log.error("Invalid card number for order: {}", order.getOrderNumber());
                     return false;
                 }
@@ -303,17 +316,51 @@ public class OrderServiceImpl implements OrderService {
                 .collect(Collectors.toList());
     }
 
-    private BigDecimal calculateShippingAmount(Cart cart) {
-        // Mock shipping calculation - in real app, integrate with shipping providers
-        BigDecimal cartTotal = cart.getTotalAmount();
+    // Helper methods
+
+    private String generateOrderNumber() {
+        return "ORD-" + System.currentTimeMillis();
+    }
+
+    private BigDecimal calculateSubtotal(Cart cart) {
+        return cart.getItems().stream()
+                .map(item -> {
+                    Product product = item.getProduct();
+                    // Use discount price if available, otherwise use regular price
+                    BigDecimal unitPrice = product.getDiscountPrice() != null && product.getDiscountPrice().compareTo(BigDecimal.ZERO) > 0
+                            ? product.getDiscountPrice()
+                            : product.getPrice();
+                    return unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal calculateShippingAmount(Cart cart, AddressDto shippingAddress) {
+        BigDecimal cartTotal = calculateSubtotal(cart);
 
         // Free shipping over $100
         if (cartTotal.compareTo(new BigDecimal("100")) >= 0) {
             return BigDecimal.ZERO;
         }
 
-        // Flat rate shipping
-        return new BigDecimal("9.99");
+        // Calculate shipping based on country
+        String country = shippingAddress != null ? shippingAddress.getCountry() : "RW";
+        return switch (country.toUpperCase()) {
+            case "RW", "RWANDA" -> new BigDecimal("5.00");
+            case "US", "CA", "GB" -> new BigDecimal("15.00");
+            case "AU", "DE", "FR", "IT", "ES" -> new BigDecimal("20.00");
+            default -> new BigDecimal("25.00");
+        };
+    }
+
+    private BigDecimal calculateTaxAmount(BigDecimal subtotal) {
+        // Simple tax calculation - 10%
+        return subtotal.multiply(new BigDecimal("0.10"));
+    }
+
+    private LocalDateTime calculateEstimatedDeliveryDate() {
+        // Simple calculation - 5-7 business days
+        return LocalDateTime.now().plusDays(7);
     }
 
     private String getProductMainImageUrl(Product product) {
