@@ -5,7 +5,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { width: string; height: string } }
 ) {
-  const { width, height } = params;
+  const { width, height } = await params;
   
   // Create a simple SVG placeholder
   const svg = `
