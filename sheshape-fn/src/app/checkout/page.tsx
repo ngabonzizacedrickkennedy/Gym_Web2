@@ -24,7 +24,7 @@ import {
 
 // Type definitions
 type StepId = "shipping" | "payment" | "review" | "success";
-type PaymentMethod = "CREDIT_CARD" | "PAYPAL" | "DIGITAL_WALLET";
+type PaymentMethod = "CREDIT_CARD" | "DEBIT_CARD" | "PAYPAL" | "DIGITAL_WALLET";
 type SectionKey = "shipping" | "payment" | "review";
 
 interface ShippingData {
@@ -142,6 +142,53 @@ export default function RealisticCheckoutPage() {
   const { cart, clearCart } = useEnhancedCart();
   const router = useRouter();
 
+  const validateCheckoutData = (shippingData: any, paymentData: any): string[] => {
+    const errors: string[] = [];
+
+    if (!shippingData.street?.trim()) errors.push('Street address is required');
+    if (!shippingData.city?.trim()) errors.push('City is required');
+    if (!shippingData.state?.trim()) errors.push('State is required');
+    if (!shippingData.zipCode?.trim()) errors.push('ZIP code is required');
+    if (!shippingData.country?.trim()) errors.push('Country is required');
+
+    if (shippingData.phone) {
+      const phoneRegex = /^[+]?\d{10,15}$/;
+      if (!phoneRegex.test(shippingData.phone)) {
+        errors.push('Phone number must be 10-15 digits (optional + prefix)');
+      }
+    }
+
+    if (paymentData.paymentMethod === 'CREDIT_CARD' || paymentData.paymentMethod === 'DEBIT_CARD') {
+      if (!paymentData.cardNumber?.replace(/\s/g, '')) errors.push('Card number is required');
+      if (!paymentData.expiryMonth) errors.push('Expiry month is required');
+      if (!paymentData.expiryYear) errors.push('Expiry year is required');
+      if (!paymentData.cvv) errors.push('CVV is required');
+      if (!paymentData.cardHolderName?.trim()) errors.push('Card holder name is required');
+
+      const cardNumber = paymentData.cardNumber?.replace(/\s/g, '');
+      if (cardNumber && (cardNumber.length < 13 || cardNumber.length > 19)) {
+        errors.push('Card number must be 13-19 digits');
+      }
+
+      const month = paymentData.expiryMonth?.toString();
+      if (month && !/^(0[1-9]|1[0-2])$/.test(month)) {
+        errors.push('Expiry month must be 01-12');
+      }
+
+      const year = paymentData.expiryYear?.toString();
+      if (year && !/^[0-9]{4}$/.test(year)) {
+        errors.push('Expiry year must be 4 digits');
+      }
+
+      const cvv = paymentData.cvv;
+      if (cvv && !/^[0-9]{3,4}$/.test(cvv)) {
+        errors.push('CVV must be 3-4 digits');
+      }
+    }
+
+    return errors;
+  };
+
   const steps: Step[] = [
     { id: "shipping", name: "Shipping", icon: Truck },
     { id: "payment", name: "Payment", icon: CreditCard },
@@ -205,6 +252,13 @@ export default function RealisticCheckoutPage() {
       return;
     }
 
+    const validationErrors = validateCheckoutData(shippingData, paymentData);
+    if (validationErrors.length > 0) {
+      setOrderError(validationErrors.join(', '));
+      toast.error('Please fix the following errors: ' + validationErrors.join(', '));
+      return;
+    }
+
     setIsPlacingOrder(true);
     setOrderError(null);
 
@@ -223,25 +277,27 @@ export default function RealisticCheckoutPage() {
         },
         customerNotes: shippingData.notes || undefined,
         paymentDetails:
-          paymentData.paymentMethod === "CREDIT_CARD"
+          paymentData.paymentMethod === "CREDIT_CARD" || paymentData.paymentMethod === "DEBIT_CARD"
             ? {
-                cardNumber: paymentData.cardNumber,
+                cardNumber: paymentData.cardNumber?.replace(/\s/g, ''),
                 cardHolderName: paymentData.cardHolderName,
-                expiryMonth: paymentData.expiryMonth,
-                expiryYear: paymentData.expiryYear,
+                expiryMonth: paymentData.expiryMonth?.toString().padStart(2, '0'),
+                expiryYear: paymentData.expiryYear?.toString(),
                 cvv: paymentData.cvv,
               }
             : undefined,
       };
 
+      console.log('Checkout request:', checkoutRequest);
+
       const order = await orderService.checkout(checkoutRequest);
       await clearCart();
-      toast.success(`Order placed successfully! Order #${order.orderNumber}`);
-      setCompletedSteps((prev) => [...prev, "review"]);
+      setCompletedSteps(["shipping", "payment", "review", "success"]);
       setCurrentStep("success");
+      toast.success("Order placed successfully!");
     } catch (error: any) {
-      const errorMessage =
-        error.message || "Failed to place order. Please try again.";
+      console.error('Checkout error details:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to place order';
       setOrderError(errorMessage);
       toast.error(errorMessage);
     } finally {

@@ -135,11 +135,15 @@ export function PaymentForm({ onSubmit, initialData }: PaymentFormProps) {
       paymentMethod: selectedMethod,
       cardNumber: initialData?.paymentDetails?.cardNumber || "",
       cardHolderName: initialData?.paymentDetails?.cardHolderName || "",
-      expiryMonth: initialData?.paymentDetails?.expiryMonth || undefined,
-      expiryYear: initialData?.paymentDetails?.expiryYear || undefined,
+      expiryMonth: initialData?.paymentDetails?.expiryMonth
+        ? Number(initialData?.paymentDetails?.expiryMonth)
+        : undefined,
+      expiryYear: initialData?.paymentDetails?.expiryYear
+        ? Number(initialData?.paymentDetails?.expiryYear)
+        : undefined,
       cvv: initialData?.paymentDetails?.cvv || "",
-      paypalEmail: initialData?.paymentDetails?.paypalEmail || "",
-      walletType: initialData?.paymentDetails?.walletType || "",
+      paypalEmail: (initialData?.paymentDetails as any)?.paypalEmail || "",
+      walletType: (initialData?.paymentDetails as any)?.walletProvider || "",
     },
     mode: "onChange",
   });
@@ -174,7 +178,7 @@ export function PaymentForm({ onSubmit, initialData }: PaymentFormProps) {
   };
 
   const onFormSubmit = (data: PaymentFormData) => {
-    const paymentDetails: CheckoutRequest["paymentDetails"] = {};
+    const paymentDetails: any = {};
 
     if (
       data.paymentMethod === "CREDIT_CARD" ||
@@ -182,18 +186,22 @@ export function PaymentForm({ onSubmit, initialData }: PaymentFormProps) {
     ) {
       paymentDetails.cardNumber = data.cardNumber?.replace(/\s/g, "");
       paymentDetails.cardHolderName = data.cardHolderName;
-      paymentDetails.expiryMonth = data.expiryMonth;
-      paymentDetails.expiryYear = data.expiryYear;
+      // Ensure these are always strings and properly formatted
+      paymentDetails.expiryMonth = data.expiryMonth?.toString().padStart(2, '0');
+      paymentDetails.expiryYear = data.expiryYear?.toString();
       paymentDetails.cvv = data.cvv;
     } else if (data.paymentMethod === "PAYPAL") {
       paymentDetails.paypalEmail = data.paypalEmail;
     } else if (data.paymentMethod === "DIGITAL_WALLET") {
-      paymentDetails.walletType = data.walletType;
+      // Fixed: Use walletProvider instead of walletType
+      paymentDetails.walletProvider = data.walletType;
     }
 
     onSubmit(
       data.paymentMethod,
-      data.paymentMethod === "CASH_ON_DELIVERY" ? undefined : paymentDetails
+      data.paymentMethod === "CASH_ON_DELIVERY"
+        ? undefined
+        : (paymentDetails as CheckoutRequest["paymentDetails"]) // cast to match backend type
     );
     toast.success("Payment method saved!");
   };
