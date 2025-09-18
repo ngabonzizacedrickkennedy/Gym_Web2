@@ -43,8 +43,8 @@ interface ShippingData {
 interface PaymentData {
   paymentMethod: PaymentMethod;
   cardNumber: string;
-  expiryMonth: string;
-  expiryYear: string;
+  expiryMonth: number | string;
+  expiryYear: number | string;
   cvv: string;
   cardHolderName: string;
   saveCard: boolean;
@@ -152,9 +152,9 @@ export default function RealisticCheckoutPage() {
     if (!shippingData.country?.trim()) errors.push('Country is required');
 
     if (shippingData.phone) {
-      const phoneRegex = /^[+]?\d{10,15}$/;
-      if (!phoneRegex.test(shippingData.phone)) {
-        errors.push('Phone number must be 10-15 digits (optional + prefix)');
+      const phoneRegex = /^[+]?[0-9]{10,15}$/;
+      if (!phoneRegex.test(shippingData.phone.replace(/[\s\-\(\)]/g, ''))) {
+        errors.push('Phone number must be 10-15 digits');
       }
     }
 
@@ -170,13 +170,15 @@ export default function RealisticCheckoutPage() {
         errors.push('Card number must be 13-19 digits');
       }
 
-      const month = paymentData.expiryMonth?.toString();
+      const month = paymentData.expiryMonth?.toString().padStart(2, '0');
       if (month && !/^(0[1-9]|1[0-2])$/.test(month)) {
         errors.push('Expiry month must be 01-12');
       }
 
       const year = paymentData.expiryYear?.toString();
-      if (year && !/^[0-9]{4}$/.test(year)) {
+      if (year && year.length === 4 && /^[0-9]{4}$/.test(year)) {
+        // valid
+      } else if (year) {
         errors.push('Expiry year must be 4 digits');
       }
 
@@ -268,7 +270,7 @@ export default function RealisticCheckoutPage() {
         shippingAddress: {
           firstName: shippingData.firstName,
           lastName: shippingData.lastName,
-          phone: shippingData.phone,
+          phone: shippingData.phone?.replace(/[\s\-\(\)]/g, ''),
           street: shippingData.street,
           city: shippingData.city,
           state: shippingData.state,
@@ -288,7 +290,7 @@ export default function RealisticCheckoutPage() {
             : undefined,
       };
 
-      console.log('Checkout request:', checkoutRequest);
+      console.log('Final checkout request:', JSON.stringify(checkoutRequest, null, 2));
 
       const order = await orderService.checkout(checkoutRequest);
       await clearCart();

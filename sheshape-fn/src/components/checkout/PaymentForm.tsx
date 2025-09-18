@@ -197,6 +197,9 @@ export function PaymentForm({ onSubmit, initialData }: PaymentFormProps) {
       paymentDetails.walletProvider = data.walletType;
     }
 
+    // Debug log to verify what is being sent
+    console.log('Payment details being sent:', paymentDetails);
+
     onSubmit(
       data.paymentMethod,
       data.paymentMethod === "CASH_ON_DELIVERY"
