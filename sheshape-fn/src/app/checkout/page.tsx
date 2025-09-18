@@ -145,6 +145,9 @@ export default function RealisticCheckoutPage() {
   const validateCheckoutData = (shippingData: any, paymentData: any): string[] => {
     const errors: string[] = [];
 
+    console.log('=== VALIDATION DEBUG ===');
+    console.log('paymentData.expiryYear:', paymentData.expiryYear, typeof paymentData.expiryYear);
+
     if (!shippingData.street?.trim()) errors.push('Street address is required');
     if (!shippingData.city?.trim()) errors.push('City is required');
     if (!shippingData.state?.trim()) errors.push('State is required');
@@ -175,11 +178,28 @@ export default function RealisticCheckoutPage() {
         errors.push('Expiry month must be 01-12');
       }
 
-      const year = paymentData.expiryYear?.toString();
-      if (year && year.length === 4 && /^[0-9]{4}$/.test(year)) {
-        // valid
-      } else if (year) {
-        errors.push('Expiry year must be 4 digits');
+      const year = paymentData.expiryYear;
+      if (year) {
+        let yearStr = year.toString();
+        console.log('Processing year:', yearStr, 'length:', yearStr.length);
+        if (yearStr.length === 2) {
+          const twoDigitYear = parseInt(yearStr);
+          const currentYear = new Date().getFullYear();
+          const currentCentury = Math.floor(currentYear / 100) * 100;
+          yearStr = (currentCentury + twoDigitYear).toString();
+          console.log('Converted 2-digit to 4-digit:', yearStr);
+        }
+        if (yearStr.length === 4 && /^[0-9]{4}$/.test(yearStr)) {
+          const yearNum = parseInt(yearStr);
+          const currentYear = new Date().getFullYear();
+          if (yearNum < currentYear || yearNum > currentYear + 10) {
+            errors.push('Expiry year must be between current year and 10 years from now');
+          }
+          console.log('Year validation passed:', yearStr);
+        } else {
+          console.log('Year validation failed:', yearStr);
+          errors.push('Expiry year must be 4 digits');
+        }
       }
 
       const cvv = paymentData.cvv;
@@ -828,18 +848,19 @@ export default function RealisticCheckoutPage() {
                               required
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                               value={paymentData.expiryYear}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                console.log('Year selected:', e.target.value);
                                 setPaymentData({
                                   ...paymentData,
                                   expiryYear: e.target.value,
                                 })
-                              }
+                              }}
                             >
-                              <option value="">YY</option>
+                              <option value="">YYYY</option>
                               {[...Array(10)].map((_, i) => (
                                 <option
                                   key={i}
-                                  value={String(2025 + i).slice(-2)}
+                                  value={2025 + i}
                                 >
                                   {2025 + i}
                                 </option>
