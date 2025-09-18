@@ -1,5 +1,12 @@
 "use client";
 import React, { useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { useEnhancedCart } from "@/context/EnhancedCartContext";
+import { orderService } from "@/services/orderService";
+import { toast } from "react-toastify";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+
 import {
   CreditCard,
   Truck,
@@ -128,6 +135,12 @@ export default function RealisticCheckoutPage() {
     cardHolderName: "",
     saveCard: false,
   });
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+
+  const { isAuthenticated } = useAuth();
+  const { cart, clearCart } = useEnhancedCart();
+  const router = useRouter();
 
   const steps: Step[] = [
     { id: "shipping", name: "Shipping", icon: Truck },
@@ -136,13 +149,16 @@ export default function RealisticCheckoutPage() {
     { id: "success", name: "Success", icon: Check },
   ];
 
-  const subtotal = mockCartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  const subtotal = mockCartItems.reduce(
+    (acc, item) => acc + item.price * item.quantity,
+    0
+  );
   const shippingCost = 9.99;
   const tax = subtotal * 0.08;
   const total = subtotal + shippingCost + tax;
 
   const toggleSection = (section: SectionKey) => {
-    setExpandedSections(prev => ({
+    setExpandedSections((prev) => ({
       ...prev,
       [section]: !prev[section],
     }));
@@ -150,7 +166,10 @@ export default function RealisticCheckoutPage() {
 
   const handleShippingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setCompletedSteps(prev => [...prev.filter(step => step !== "shipping"), "shipping"]);
+    setCompletedSteps((prev) => [
+      ...prev.filter((step) => step !== "shipping"),
+      "shipping",
+    ]);
     setCurrentStep("payment");
     setExpandedSections({
       shipping: false,
@@ -161,7 +180,10 @@ export default function RealisticCheckoutPage() {
 
   const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setCompletedSteps(prev => [...prev.filter(step => step !== "payment"), "payment"]);
+    setCompletedSteps((prev) => [
+      ...prev.filter((step) => step !== "payment"),
+      "payment",
+    ]);
     setCurrentStep("review");
     setExpandedSections({
       shipping: false,
@@ -170,9 +192,61 @@ export default function RealisticCheckoutPage() {
     });
   };
 
-  const handlePlaceOrder = () => {
-    setCompletedSteps(prev => [...prev, "review"]);
-    setCurrentStep("success");
+  const handlePlaceOrder = async () => {
+    if (!isAuthenticated) {
+      toast.error("Please log in to place an order");
+      router.push("/login?returnTo=/checkout");
+      return;
+    }
+
+    if (!cart?.items?.length) {
+      toast.error("Your cart is empty");
+      router.push("/shop");
+      return;
+    }
+
+    setIsPlacingOrder(true);
+    setOrderError(null);
+
+    try {
+      const checkoutRequest = {
+        paymentMethod: paymentData.paymentMethod,
+        shippingAddress: {
+          firstName: shippingData.firstName,
+          lastName: shippingData.lastName,
+          phone: shippingData.phone,
+          street: shippingData.street,
+          city: shippingData.city,
+          state: shippingData.state,
+          zipCode: shippingData.zipCode,
+          country: shippingData.country,
+        },
+        customerNotes: shippingData.notes || undefined,
+        paymentDetails:
+          paymentData.paymentMethod === "CREDIT_CARD"
+            ? {
+                cardNumber: paymentData.cardNumber,
+                cardHolderName: paymentData.cardHolderName,
+                expiryMonth: paymentData.expiryMonth,
+                expiryYear: paymentData.expiryYear,
+                cvv: paymentData.cvv,
+              }
+            : undefined,
+      };
+
+      const order = await orderService.checkout(checkoutRequest);
+      await clearCart();
+      toast.success(`Order placed successfully! Order #${order.orderNumber}`);
+      setCompletedSteps((prev) => [...prev, "review"]);
+      setCurrentStep("success");
+    } catch (error: any) {
+      const errorMessage =
+        error.message || "Failed to place order. Please try again.";
+      setOrderError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsPlacingOrder(false);
+    }
   };
 
   return (
@@ -218,7 +292,9 @@ export default function RealisticCheckoutPage() {
                   </div>
                   <span
                     className={`ml-3 text-sm font-medium ${
-                      isCompleted || isCurrent ? "text-gray-900" : "text-gray-500"
+                      isCompleted || isCurrent
+                        ? "text-gray-900"
+                        : "text-gray-500"
                     }`}
                   >
                     {step.name}
@@ -243,7 +319,7 @@ export default function RealisticCheckoutPage() {
               <div
                 onClick={() => toggleSection("shipping")}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+                  if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     toggleSection("shipping");
                   }
@@ -266,25 +342,16 @@ export default function RealisticCheckoutPage() {
                   </div>
                   {completedSteps.includes("shipping") && (
                     <p className="mt-2 text-sm text-gray-600">
-                      {shippingData.firstName} {shippingData.lastName}, {shippingData.street}
+                      {shippingData.firstName} {shippingData.lastName},{" "}
+                      {shippingData.street}
                     </p>
                   )}
                 </div>
                 <div className="flex items-center space-x-2">
-                  {completedSteps.includes("shipping") && currentStep !== "shipping" && (
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCurrentStep("shipping");
-                        setExpandedSections({
-                          shipping: true,
-                          payment: false,
-                          review: false,
-                        });
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
+                  {completedSteps.includes("shipping") &&
+                    currentStep !== "shipping" && (
+                      <div
+                        onClick={(e) => {
                           e.stopPropagation();
                           setCurrentStep("shipping");
                           setExpandedSections({
@@ -292,15 +359,26 @@ export default function RealisticCheckoutPage() {
                             payment: false,
                             review: false,
                           });
-                        }
-                      }}
-                      className="text-blue-600 hover:text-blue-700 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
-                      role="button"
-                      tabIndex={0}
-                    >
-                      Edit
-                    </div>
-                  )}
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setCurrentStep("shipping");
+                            setExpandedSections({
+                              shipping: true,
+                              payment: false,
+                              review: false,
+                            });
+                          }
+                        }}
+                        className="text-blue-600 hover:text-blue-700 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
+                        role="button"
+                        tabIndex={0}
+                      >
+                        Edit
+                      </div>
+                    )}
                   {expandedSections.shipping ? (
                     <ChevronDown className="h-5 w-5 text-gray-400" />
                   ) : (
@@ -323,7 +401,10 @@ export default function RealisticCheckoutPage() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={shippingData.firstName}
                           onChange={(e) =>
-                            setShippingData({ ...shippingData, firstName: e.target.value })
+                            setShippingData({
+                              ...shippingData,
+                              firstName: e.target.value,
+                            })
                           }
                         />
                       </div>
@@ -337,7 +418,10 @@ export default function RealisticCheckoutPage() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={shippingData.lastName}
                           onChange={(e) =>
-                            setShippingData({ ...shippingData, lastName: e.target.value })
+                            setShippingData({
+                              ...shippingData,
+                              lastName: e.target.value,
+                            })
                           }
                         />
                       </div>
@@ -353,7 +437,10 @@ export default function RealisticCheckoutPage() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={shippingData.phone}
                         onChange={(e) =>
-                          setShippingData({ ...shippingData, phone: e.target.value })
+                          setShippingData({
+                            ...shippingData,
+                            phone: e.target.value,
+                          })
                         }
                       />
                     </div>
@@ -368,7 +455,10 @@ export default function RealisticCheckoutPage() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         value={shippingData.street}
                         onChange={(e) =>
-                          setShippingData({ ...shippingData, street: e.target.value })
+                          setShippingData({
+                            ...shippingData,
+                            street: e.target.value,
+                          })
                         }
                       />
                     </div>
@@ -384,7 +474,10 @@ export default function RealisticCheckoutPage() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={shippingData.city}
                           onChange={(e) =>
-                            setShippingData({ ...shippingData, city: e.target.value })
+                            setShippingData({
+                              ...shippingData,
+                              city: e.target.value,
+                            })
                           }
                         />
                       </div>
@@ -398,7 +491,10 @@ export default function RealisticCheckoutPage() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={shippingData.state}
                           onChange={(e) =>
-                            setShippingData({ ...shippingData, state: e.target.value })
+                            setShippingData({
+                              ...shippingData,
+                              state: e.target.value,
+                            })
                           }
                         />
                       </div>
@@ -412,7 +508,10 @@ export default function RealisticCheckoutPage() {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={shippingData.zipCode}
                           onChange={(e) =>
-                            setShippingData({ ...shippingData, zipCode: e.target.value })
+                            setShippingData({
+                              ...shippingData,
+                              zipCode: e.target.value,
+                            })
                           }
                         />
                       </div>
@@ -428,7 +527,10 @@ export default function RealisticCheckoutPage() {
                         placeholder="Any special delivery instructions..."
                         value={shippingData.notes}
                         onChange={(e) =>
-                          setShippingData({ ...shippingData, notes: e.target.value })
+                          setShippingData({
+                            ...shippingData,
+                            notes: e.target.value,
+                          })
                         }
                       />
                     </div>
@@ -446,7 +548,10 @@ export default function RealisticCheckoutPage() {
                           })
                         }
                       />
-                      <label htmlFor="same-billing" className="ml-2 text-sm text-gray-600">
+                      <label
+                        htmlFor="same-billing"
+                        className="ml-2 text-sm text-gray-600"
+                      >
                         Use same address for billing
                       </label>
                     </div>
@@ -469,7 +574,7 @@ export default function RealisticCheckoutPage() {
               <div
                 onClick={() => toggleSection("payment")}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+                  if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     toggleSection("payment");
                   }
@@ -499,20 +604,10 @@ export default function RealisticCheckoutPage() {
                   )}
                 </div>
                 <div className="flex items-center space-x-2">
-                  {completedSteps.includes("payment") && currentStep !== "payment" && (
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCurrentStep("payment");
-                        setExpandedSections({
-                          shipping: false,
-                          payment: true,
-                          review: false,
-                        });
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
+                  {completedSteps.includes("payment") &&
+                    currentStep !== "payment" && (
+                      <div
+                        onClick={(e) => {
                           e.stopPropagation();
                           setCurrentStep("payment");
                           setExpandedSections({
@@ -520,15 +615,26 @@ export default function RealisticCheckoutPage() {
                             payment: true,
                             review: false,
                           });
-                        }
-                      }}
-                      className="text-blue-600 hover:text-blue-700 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
-                      role="button"
-                      tabIndex={0}
-                    >
-                      Edit
-                    </div>
-                  )}
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setCurrentStep("payment");
+                            setExpandedSections({
+                              shipping: false,
+                              payment: true,
+                              review: false,
+                            });
+                          }
+                        }}
+                        className="text-blue-600 hover:text-blue-700 text-sm font-medium cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
+                        role="button"
+                        tabIndex={0}
+                      >
+                        Edit
+                      </div>
+                    )}
                   {expandedSections.payment ? (
                     <ChevronDown className="h-5 w-5 text-gray-400" />
                   ) : (
@@ -551,7 +657,9 @@ export default function RealisticCheckoutPage() {
                             type="radio"
                             name="paymentMethod"
                             value="CREDIT_CARD"
-                            checked={paymentData.paymentMethod === "CREDIT_CARD"}
+                            checked={
+                              paymentData.paymentMethod === "CREDIT_CARD"
+                            }
                             onChange={(e) =>
                               setPaymentData({
                                 ...paymentData,
@@ -561,7 +669,9 @@ export default function RealisticCheckoutPage() {
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                           />
                           <CreditCard className="ml-3 h-5 w-5 text-gray-600" />
-                          <span className="ml-2 text-sm font-medium">Credit/Debit Card</span>
+                          <span className="ml-2 text-sm font-medium">
+                            Credit/Debit Card
+                          </span>
                         </label>
 
                         <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
@@ -578,7 +688,9 @@ export default function RealisticCheckoutPage() {
                             }
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="ml-5 text-sm font-medium">PayPal</span>
+                          <span className="ml-5 text-sm font-medium">
+                            PayPal
+                          </span>
                         </label>
                       </div>
                     </div>
@@ -615,7 +727,10 @@ export default function RealisticCheckoutPage() {
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             value={paymentData.cardNumber}
                             onChange={(e) =>
-                              setPaymentData({ ...paymentData, cardNumber: e.target.value })
+                              setPaymentData({
+                                ...paymentData,
+                                cardNumber: e.target.value,
+                              })
                             }
                           />
                         </div>
@@ -638,7 +753,10 @@ export default function RealisticCheckoutPage() {
                             >
                               <option value="">MM</option>
                               {[...Array(12)].map((_, i) => (
-                                <option key={i} value={String(i + 1).padStart(2, "0")}>
+                                <option
+                                  key={i}
+                                  value={String(i + 1).padStart(2, "0")}
+                                >
                                   {String(i + 1).padStart(2, "0")}
                                 </option>
                               ))}
@@ -653,12 +771,18 @@ export default function RealisticCheckoutPage() {
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                               value={paymentData.expiryYear}
                               onChange={(e) =>
-                                setPaymentData({ ...paymentData, expiryYear: e.target.value })
+                                setPaymentData({
+                                  ...paymentData,
+                                  expiryYear: e.target.value,
+                                })
                               }
                             >
                               <option value="">YY</option>
                               {[...Array(10)].map((_, i) => (
-                                <option key={i} value={String(2025 + i).slice(-2)}>
+                                <option
+                                  key={i}
+                                  value={String(2025 + i).slice(-2)}
+                                >
                                   {2025 + i}
                                 </option>
                               ))}
@@ -676,7 +800,10 @@ export default function RealisticCheckoutPage() {
                               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                               value={paymentData.cvv}
                               onChange={(e) =>
-                                setPaymentData({ ...paymentData, cvv: e.target.value })
+                                setPaymentData({
+                                  ...paymentData,
+                                  cvv: e.target.value,
+                                })
                               }
                             />
                           </div>
@@ -689,10 +816,16 @@ export default function RealisticCheckoutPage() {
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                             checked={paymentData.saveCard}
                             onChange={(e) =>
-                              setPaymentData({ ...paymentData, saveCard: e.target.checked })
+                              setPaymentData({
+                                ...paymentData,
+                                saveCard: e.target.checked,
+                              })
                             }
                           />
-                          <label htmlFor="save-card" className="ml-2 text-sm text-gray-600">
+                          <label
+                            htmlFor="save-card"
+                            className="ml-2 text-sm text-gray-600"
+                          >
                             Save this card for future purchases
                           </label>
                         </div>
@@ -717,7 +850,7 @@ export default function RealisticCheckoutPage() {
               <div
                 onClick={() => toggleSection("review")}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+                  if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     toggleSection("review");
                   }
@@ -731,7 +864,9 @@ export default function RealisticCheckoutPage() {
                 <div>
                   <div className="flex items-center space-x-3">
                     <Eye className="h-5 w-5 text-gray-600" />
-                    <h3 className="text-lg font-semibold text-gray-900">Review Order</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Review Order
+                    </h3>
                     {completedSteps.includes("review") && (
                       <Check className="h-5 w-5 text-green-600" />
                     )}
@@ -748,19 +883,27 @@ export default function RealisticCheckoutPage() {
               </div>
 
               {expandedSections.review && (
-                <div id="review-content" className="px-6 pb-6 border-t space-y-6">
+                <div
+                  id="review-content"
+                  className="px-6 pb-6 border-t space-y-6"
+                >
                   {/* Shipping Summary */}
                   <div>
-                    <h4 className="font-medium text-gray-900 mb-3">Shipping Address</h4>
+                    <h4 className="font-medium text-gray-900 mb-3">
+                      Shipping Address
+                    </h4>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <p className="text-sm text-gray-900 font-medium">
                         {shippingData.firstName} {shippingData.lastName}
                       </p>
-                      <p className="text-sm text-gray-600">{shippingData.phone}</p>
+                      <p className="text-sm text-gray-600">
+                        {shippingData.phone}
+                      </p>
                       <p className="text-sm text-gray-600">
                         {shippingData.street}
                         <br />
-                        {shippingData.city}, {shippingData.state} {shippingData.zipCode}
+                        {shippingData.city}, {shippingData.state}{" "}
+                        {shippingData.zipCode}
                       </p>
                     </div>
                     <div className="flex justify-end mt-2">
@@ -774,7 +917,7 @@ export default function RealisticCheckoutPage() {
                           });
                         }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
+                          if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
                             setCurrentStep("shipping");
                             setExpandedSections({
@@ -795,7 +938,9 @@ export default function RealisticCheckoutPage() {
 
                   {/* Payment Summary */}
                   <div>
-                    <h4 className="font-medium text-gray-900 mb-3">Payment Method</h4>
+                    <h4 className="font-medium text-gray-900 mb-3">
+                      Payment Method
+                    </h4>
                     <div className="bg-gray-50 rounded-lg p-4">
                       <div className="flex items-center justify-between">
                         <div>
@@ -822,7 +967,7 @@ export default function RealisticCheckoutPage() {
                             });
                           }}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
+                            if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
                               setCurrentStep("payment");
                               setExpandedSections({
@@ -844,7 +989,9 @@ export default function RealisticCheckoutPage() {
 
                   {/* Order Items */}
                   <div>
-                    <h4 className="font-medium text-gray-900 mb-3">Order Items</h4>
+                    <h4 className="font-medium text-gray-900 mb-3">
+                      Order Items
+                    </h4>
                     <div className="space-y-3">
                       {mockCartItems.map((item) => (
                         <div
@@ -895,11 +1042,16 @@ export default function RealisticCheckoutPage() {
 
                     <button
                       onClick={handlePlaceOrder}
-                      className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors"
+                      disabled={isPlacingOrder}
+                      className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <div className="flex items-center justify-center space-x-2">
                         <Lock className="h-5 w-5" />
-                        <span>Place Order - ${total.toFixed(2)}</span>
+                        <span>
+                          {isPlacingOrder
+                            ? "Placing Order..."
+                            : `Place Order - $${total.toFixed(2)}`}
+                        </span>
                       </div>
                     </button>
                   </div>
@@ -946,11 +1098,15 @@ export default function RealisticCheckoutPage() {
                 <div className="border-t pt-4 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Subtotal</span>
-                    <span className="text-gray-900">${subtotal.toFixed(2)}</span>
+                    <span className="text-gray-900">
+                      ${subtotal.toFixed(2)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Shipping</span>
-                    <span className="text-gray-900">${shippingCost.toFixed(2)}</span>
+                    <span className="text-gray-900">
+                      ${shippingCost.toFixed(2)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Tax</span>
@@ -1010,8 +1166,8 @@ export default function RealisticCheckoutPage() {
                 Order Placed Successfully!
               </h3>
               <p className="text-sm text-gray-600 mb-6">
-                Your order #ORD-2025-001 has been confirmed and will be processed
-                shortly. You'll receive a confirmation email soon.
+                Your order #ORD-2025-001 has been confirmed and will be
+                processed shortly. You'll receive a confirmation email soon.
               </p>
               <div className="space-y-2">
                 <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
